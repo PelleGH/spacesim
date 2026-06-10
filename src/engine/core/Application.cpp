@@ -3,12 +3,26 @@
 #include "components/PlayerControlledComponent.h"
 #include "components/ShipFlightComponent.h"
 #include "components/TransformComponent.h"
+#include "world/StarSystemLoader.h"
 
 #include <raylib.h>
 #include <raymath.h>
 
 namespace SpaceSim
 {
+    int FindObjectIndexById(const StarSystem& system, const std::string& id)
+    {
+        for (int i = 0; i < static_cast<int>(system.objects.size()); ++i)
+        {
+            if (system.objects[i].id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
     static const char* GetShipPresetName(ShipPreset preset)
     {
         switch (preset)
@@ -27,9 +41,9 @@ namespace SpaceSim
     {
         m_renderer = std::make_unique<Renderer>(1280, 720, "SpaceSim");
 
-        m_world.starSystem = CreateTestStarSystem();
-        m_world.selectedJumpTarget = 4; // Aster Relay.
-        m_world.activePoi = 4;
+        m_world.starSystem = LoadStarSystemFromJson("data/systems/test_system.json");
+        m_world.selectedJumpTarget = FindObjectIndexById(m_world.starSystem, "aster_relay");
+        m_world.activePoi = m_world.selectedJumpTarget;
         m_world.activeBubbleOrigin = m_world.starSystem.objects[m_world.activePoi].position;
         m_world.globalPlayerPosition = m_world.activeBubbleOrigin;
 
@@ -70,30 +84,43 @@ namespace SpaceSim
 
     void Application::update(float dt)
     {
-        //m_starSystemSystem.update(m_world, dt);
-
-/*         if (m_world.activePoi >= 0 &&
-            m_world.activePoi < static_cast<int>(m_world.starSystem.objects.size()))
+        if (IsKeyPressed(KEY_F11))
         {
-            m_world.activeBubbleOrigin = m_world.starSystem.objects[m_world.activePoi].position;
-        } */
-
+            if (IsWindowFullscreen())
+            {
+                ToggleFullscreen();
+                SetWindowSize(1280, 720);
+            }
+            else
+            {
+                const int monitor = GetCurrentMonitor();
+                SetWindowSize(GetMonitorWidth(monitor), GetMonitorHeight(monitor));
+                ToggleFullscreen();
+            }
+        }
         m_ftlSystem.update(m_world, dt);
 
-        m_shipControlSystem.update(m_world, dt);
+        if (m_world.travelMode == TravelMode::NormalFlight)
+        {
+            m_shipControlSystem.update(m_world, dt);
+        }
 
         const auto& transform = m_world.registry.get<TransformComponent>(m_world.playerShip);
 
         constexpr double localToGlobalScale = 0.001;
 
-        m_world.globalPlayerPosition = {
-            m_world.activeBubbleOrigin.x + transform.position.x * localToGlobalScale,
-            m_world.activeBubbleOrigin.y + transform.position.y * localToGlobalScale,
-            m_world.activeBubbleOrigin.z + transform.position.z * localToGlobalScale
-        };
+        if (m_world.travelMode == TravelMode::NormalFlight)
+        {
+            m_world.globalPlayerPosition = {
+                m_world.activeBubbleOrigin.x + transform.position.x * localToGlobalScale,
+                m_world.activeBubbleOrigin.y + transform.position.y * localToGlobalScale,
+                m_world.activeBubbleOrigin.z + transform.position.z * localToGlobalScale
+            };
+        }
 
         m_cameraSystem.update(m_world, dt);
     }
+
     void Application::render()
     {
         m_renderer->beginFrame();
@@ -103,20 +130,26 @@ namespace SpaceSim
         m_renderer->begin3D(m_world.camera);
         m_renderSystem.renderWorld(m_world, *m_renderer);
         m_renderer->end3D();
-        const int centerX = GetScreenWidth() / 2;
-        const int centerY = GetScreenHeight() / 2;
+        const int screenWidth = GetScreenWidth();
+        const int screenHeight = GetScreenHeight();
+
+        const float centerX = static_cast<float>(screenWidth) * 0.5f;
+        const float centerY = static_cast<float>(screenHeight) * 0.5f;
 
         const float controlRadius = m_shipControlSystem.getControlRadius();
         const Vector2 virtualStick = m_shipControlSystem.getVirtualStick();
 
-        DrawCircleLines(centerX, centerY, controlRadius, DARKGRAY);
-        DrawCircle(centerX, centerY, 3.0f, RAYWHITE);
-        DrawCircle(
-            static_cast<int>(centerX + virtualStick.x),
-            static_cast<int>(centerY + virtualStick.y),
-            5.0f,
-            SKYBLUE
-        );
+        if (m_world.travelMode == TravelMode::NormalFlight)
+        {
+            DrawCircleLines(centerX, centerY, controlRadius, DARKGRAY);
+            DrawCircle(centerX, centerY, 3.0f, RAYWHITE);
+            DrawCircle(
+                static_cast<int>(centerX + virtualStick.x),
+                static_cast<int>(centerY + virtualStick.y),
+                5.0f,
+                SKYBLUE
+            );
+        }
         m_renderer->drawDebugText("SpaceSim - EnTT ECS active", 20, 20);
         m_renderer->drawDebugText("W/S = throttle, Z = zero, A/D = strafe, Space/Ctrl = up/down, Q/E = roll", 20, 45);
 
@@ -176,7 +209,7 @@ namespace SpaceSim
 
             DrawText(
                 TextFormat(
-                    "Jump Target: %s  Distance: %.0f  [Tab] cycle  [J] jump",
+                    "FTL Target: %s  Distance: %.0f  [Tab] cycle  [J] travel",
                     target.name.c_str(),
                     Length(toTarget)
                 ),
@@ -185,6 +218,43 @@ namespace SpaceSim
                 20,
                 YELLOW
             );
+            if (m_world.travelMode == TravelMode::FTLTravel)
+                {
+                    const double distanceToTarget = Length(
+                        m_world.ftlTravel.destination - m_world.globalPlayerPosition
+                    );
+
+                    const bool charging =
+                        m_world.ftlTravel.chargeTimer < m_world.ftlTravel.chargeTime;
+
+                    if (charging)
+                    {
+                        DrawText(
+                            TextFormat(
+                                "FTL ALIGNING  Distance: %.0f  [C] cancel",
+                                distanceToTarget
+                            ),
+                            20,
+                            270,
+                            20,
+                            YELLOW
+                        );
+                    }
+                    else
+                    {
+                        DrawText(
+                            TextFormat(
+                                "FTL TRAVEL ACTIVE  Distance: %.0f  Speed: %.0f  [C] drop out",
+                                distanceToTarget,
+                                m_world.ftlTravel.speed
+                            ),
+                            20,
+                            270,
+                            20,
+                            SKYBLUE
+                        );
+                    }
+                }
         }
 
         if (m_world.activePoi >= 0)
@@ -192,7 +262,22 @@ namespace SpaceSim
             const auto& activePoi = m_world.starSystem.objects[m_world.activePoi];
 
             DrawText(
-                TextFormat("Current Bubble: %s", activePoi.name.c_str()),
+                TextFormat("Nearby POI: %s", activePoi.name.c_str()),
+                20,
+                220,
+                20,
+                SKYBLUE
+            );
+        }
+        else
+        {
+            DrawText(
+                TextFormat(
+                    "Bubble Origin: %.0f %.0f %.0f",
+                    m_world.activeBubbleOrigin.x,
+                    m_world.activeBubbleOrigin.y,
+                    m_world.activeBubbleOrigin.z
+                ),
                 20,
                 220,
                 20,
@@ -208,7 +293,7 @@ namespace SpaceSim
                 m_world.globalPlayerPosition.z
             ),
             20,
-            245,
+            295,
             20,
             RAYWHITE
         );

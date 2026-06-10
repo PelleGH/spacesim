@@ -11,6 +11,10 @@ namespace SpaceSim
 
     private:
         void selectNextJumpTarget(GameWorld& world);
-        void jumpToSelectedTarget(GameWorld& world);
+
+        void beginFTLTravel(GameWorld& world);
+        void updateFTLTravel(GameWorld& world, float dt);
+        void arriveFromFTLTravel(GameWorld& world);
+        void cancelFTLTravel(GameWorld& world);
     };
 }

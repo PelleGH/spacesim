@@ -3,7 +3,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
-
+#include <raylib.h>
 namespace SpaceSim
 {
     struct DVec3
@@ -66,12 +66,19 @@ namespace SpaceSim
 
     struct GlobalObject
     {
+        std::string id;
         std::string name;
+
         GlobalObjectType type = GlobalObjectType::Planet;
 
         DVec3 position{};
 
         double visualRadius = 1.0;
+
+        Color color = WHITE;
+
+        std::string parentId;
+        int parentIndex = -1;
 
         bool hasOrbit = false;
         OrbitData orbit{};
@@ -81,65 +88,7 @@ namespace SpaceSim
 
     struct StarSystem
     {
+        std::string name;
         std::vector<GlobalObject> objects;
     };
-    
-    inline StarSystem CreateTestStarSystem()
-    {
-        StarSystem system;
-
-        system.objects.push_back(GlobalObject{
-            .name = "Helios",
-            .type = GlobalObjectType::Sun,
-            .position = { 0.0, 0.0, 0.0 },
-            .visualRadius = 50000.0
-        });
-
-        system.objects.push_back(GlobalObject{
-            .name = "Aster",
-            .type = GlobalObjectType::Planet,
-            .position = { 300000.0, 0.0, 0.0 },
-            .visualRadius = 12000.0
-        });
-
-        system.objects.push_back(GlobalObject{
-            .name = "Boreal",
-            .type = GlobalObjectType::Planet,
-            .position = { -700000.0, 0.0, 300000.0 },
-            .visualRadius = 18000.0
-        });
-
-        system.objects.push_back(GlobalObject{
-            .name = "Cyra",
-            .type = GlobalObjectType::Planet,
-            .position = { 200000.0, 0.0, -1200000.0 },
-            .visualRadius = 9000.0
-        });
-
-        system.objects.push_back(GlobalObject{
-            .name = "Aster Relay",
-            .type = GlobalObjectType::Satellite,
-            .position = { 345000.0, 0.0, 0.0 },
-            .visualRadius = 500.0,
-            .isJumpTarget = true
-        });
-
-        system.objects.push_back(GlobalObject{
-            .name = "Boreal Relay",
-            .type = GlobalObjectType::Satellite,
-            .position = { -700000.0, 0.0, 360000.0 },
-            .visualRadius = 500.0,
-            .isJumpTarget = true
-        });
-
-        system.objects.push_back(GlobalObject{
-            .name = "Cyra Relay",
-            .type = GlobalObjectType::Satellite,
-            .position = { 200000.0, 0.0, -1165000.0 },
-            .visualRadius = 500.0,
-            .isJumpTarget = true
-        });
-
-        return system;
-    }
 }

@@ -13,29 +13,66 @@ namespace SpaceSim
         world.camera.projection = CAMERA_PERSPECTIVE;
     }
 
-void CameraSystem::update(GameWorld& world, float dt)
-{
-    (void)dt;
+    void CameraSystem::update(GameWorld& world, float dt)
+    {
+        auto& transform = world.registry.get<TransformComponent>(world.playerShip);
 
-    auto& transform = world.registry.get<TransformComponent>(world.playerShip);
+        const bool allowFreeLook = world.travelMode == TravelMode::FTLTravel;
+        const bool freeLookHeld = allowFreeLook && IsKeyDown(KEY_LEFT_ALT);
 
-    Vector3 cameraOffset = Vector3RotateByQuaternion(
-        Vector3{ 0.0f, 1.0f, -8.0f },
-        transform.rotation
-    );
+        if (freeLookHeld)
+        {
+            Vector2 mouseDelta = GetMouseDelta();
 
-    Vector3 lookAhead = Vector3RotateByQuaternion(
-        Vector3{ 0.0f, 0.6f, 12.0f },
-        transform.rotation
-    );
+            m_freeLook.x -= mouseDelta.x * m_freeLookSensitivity;
+            m_freeLook.y -= mouseDelta.y * m_freeLookSensitivity;
 
-    Vector3 cameraUp = Vector3RotateByQuaternion(
-        Vector3{ 0.0f, 1.0f, 0.0f },
-        transform.rotation
-    );
+            m_freeLook.x = Clamp(m_freeLook.x, -m_maxFreeLookYaw, m_maxFreeLookYaw);
+            m_freeLook.y = Clamp(m_freeLook.y, -m_maxFreeLookPitch, m_maxFreeLookPitch);
+        }
+        else
+        {
+            const float returnAmount = Clamp(m_freeLookReturnSpeed * dt, 0.0f, 1.0f);
 
-    world.camera.position = Vector3Add(transform.position, cameraOffset);
-    world.camera.target = Vector3Add(transform.position, lookAhead);
-    world.camera.up = cameraUp;
-}
+            m_freeLook = Vector2Lerp(
+                m_freeLook,
+                Vector2{ 0.0f, 0.0f },
+                returnAmount
+            );
+        }
+
+        Quaternion freeLookYaw = QuaternionFromAxisAngle(
+            Vector3{ 0.0f, 1.0f, 0.0f },
+            m_freeLook.x
+        );
+
+        Quaternion freeLookPitch = QuaternionFromAxisAngle(
+            Vector3{ 1.0f, 0.0f, 0.0f },
+            m_freeLook.y
+        );
+
+        Quaternion cameraLookRotation = QuaternionMultiply(
+            transform.rotation,
+            QuaternionMultiply(freeLookYaw, freeLookPitch)
+        );
+
+        Vector3 cameraOffset = Vector3RotateByQuaternion(
+            Vector3{ 0.0f, 1.0f, -8.0f },
+            transform.rotation
+        );
+
+        Vector3 lookAhead = Vector3RotateByQuaternion(
+            Vector3{ 0.0f, 0.6f, 12.0f },
+            cameraLookRotation
+        );
+
+        Vector3 cameraUp = Vector3RotateByQuaternion(
+            Vector3{ 0.0f, 1.0f, 0.0f },
+            cameraLookRotation
+        );
+
+        world.camera.position = Vector3Add(transform.position, cameraOffset);
+        world.camera.target = Vector3Add(transform.position, lookAhead);
+        world.camera.up = cameraUp;
+    }
 }

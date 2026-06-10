@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(raylib CONFIG REQUIRED)
 find_package(EnTT CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 add_executable(SpaceSim
     src/main.cpp
@@ -40,6 +41,9 @@ add_executable(SpaceSim
 
     src/game/systems/FTLSystem.cpp
     src/game/systems/FTLSystem.h
+
+    src/game/world/StarSystemLoader.cpp
+    src/game/world/StarSystemLoader.h
 )
 
 target_include_directories(SpaceSim PRIVATE
@@ -51,4 +55,5 @@ target_include_directories(SpaceSim PRIVATE
 target_link_libraries(SpaceSim PRIVATE
     raylib
     EnTT::EnTT
+    nlohmann_json::nlohmann_json
 )
