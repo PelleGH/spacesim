@@ -5,66 +5,454 @@
       "id": "helios",
       "name": "Helios",
       "type": "sun",
-      "position": [0.0, 0.0, 0.0],
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
       "visualRadius": 50000.0,
-      "color": [255, 220, 90, 255],
+      "color": [
+        255,
+        220,
+        90,
+        255
+      ],
       "isJumpTarget": false
     },
     {
-      "id": "aster",
-      "name": "Aster",
+      "id": "rocky",
+      "name": "Rocky Planet",
       "type": "planet",
-      "position": [300000.0, 0.0, 0.0],
-      "visualRadius": 12000.0,
-      "color": [80, 140, 255, 255],
-      "isJumpTarget": false
+      "position": [
+        430000.0,
+        0.0,
+        0.0
+      ],
+      "visualRadius": 10500.0,
+      "color": [
+        130,
+        105,
+        85,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "rocky",
+        "composition": "silicate_iron",
+        "atmosphere": "thin",
+        "temperatureK": 310.0,
+        "seed": 4101
+      }
     },
     {
-      "id": "boreal",
-      "name": "Boreal",
+      "id": "barren_moon",
+      "name": "Barren Moon Planet",
       "type": "planet",
-      "position": [-700000.0, 0.0, 300000.0],
-      "visualRadius": 18000.0,
-      "color": [80, 220, 120, 255],
-      "isJumpTarget": false
+      "position": [
+        -430000.0,
+        0.0,
+        180000.0
+      ],
+      "visualRadius": 6500.0,
+      "color": [
+        125,
+        125,
+        125,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "barren_moon",
+        "composition": "ice_rock",
+        "atmosphere": "none",
+        "temperatureK": 180.0,
+        "seed": 4202
+      }
     },
     {
-      "id": "cyra",
-      "name": "Cyra",
+      "id": "ice_world",
+      "name": "Ice World Planet",
       "type": "planet",
-      "position": [200000.0, 0.0, -1200000.0],
+      "position": [
+        100000.0,
+        0.0,
+        620000.0
+      ],
+      "visualRadius": 11000.0,
+      "color": [
+        190,
+        220,
+        235,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "ice_world",
+        "composition": "ice_rock",
+        "atmosphere": "thin",
+        "temperatureK": 155.0,
+        "seed": 4303
+      }
+    },
+    {
+      "id": "desert_world",
+      "name": "Desert World Planet",
+      "type": "planet",
+      "position": [
+        -760000.0,
+        0.0,
+        -260000.0
+      ],
+      "visualRadius": 12500.0,
+      "color": [
+        195,
+        145,
+        75,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "desert_world",
+        "composition": "silicate_iron",
+        "atmosphere": "thick",
+        "temperatureK": 330.0,
+        "seed": 4404
+      }
+    },
+    {
+      "id": "ocean_world",
+      "name": "Ocean World Planet",
+      "type": "planet",
+      "position": [
+        760000.0,
+        0.0,
+        -420000.0
+      ],
+      "visualRadius": 13500.0,
+      "color": [
+        45,
+        90,
+        170,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "ocean_world",
+        "composition": "silicate_iron",
+        "atmosphere": "breathable",
+        "temperatureK": 288.0,
+        "seed": 4505,
+        "visualOverrides": {
+          "baseColor": [
+            45,
+            90,
+            170,
+            255
+          ],
+          "secondaryColor": [
+            60,
+            160,
+            120,
+            255
+          ],
+          "atmosphereColor": [
+            100,
+            160,
+            255,
+            120
+          ]
+        }
+      }
+    },
+    {
+      "id": "lava_world",
+      "name": "Lava World Planet",
+      "type": "planet",
+      "position": [
+        260000.0,
+        0.0,
+        -860000.0
+      ],
       "visualRadius": 9000.0,
-      "color": [190, 100, 255, 255],
-      "isJumpTarget": false
+      "color": [
+        255,
+        90,
+        20,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "lava_world",
+        "composition": "sulfuric",
+        "atmosphere": "toxic",
+        "temperatureK": 900.0,
+        "seed": 4606
+      }
     },
     {
-      "id": "aster_relay",
-      "name": "Aster Relay",
+      "id": "gas_giant",
+      "name": "Gas Giant Planet",
+      "type": "planet",
+      "position": [
+        -980000.0,
+        0.0,
+        620000.0
+      ],
+      "visualRadius": 28000.0,
+      "color": [
+        210,
+        160,
+        95,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "gas_giant",
+        "composition": "hydrogen_helium",
+        "atmosphere": "hydrogen_helium",
+        "temperatureK": 135.0,
+        "seed": 4707
+      }
+    },
+    {
+      "id": "ice_giant",
+      "name": "Ice Giant Planet",
+      "type": "planet",
+      "position": [
+        1100000.0,
+        0.0,
+        420000.0
+      ],
+      "visualRadius": 24000.0,
+      "color": [
+        90,
+        170,
+        210,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "ice_giant",
+        "composition": "methane_ammonia",
+        "atmosphere": "hydrogen_helium",
+        "temperatureK": 90.0,
+        "seed": 4808
+      }
+    },
+    {
+      "id": "carbon_world",
+      "name": "Carbon World Planet",
+      "type": "planet",
+      "position": [
+        -220000.0,
+        0.0,
+        -1220000.0
+      ],
+      "visualRadius": 9500.0,
+      "color": [
+        95,
+        42,
+        32,
+        255
+      ],
+      "isJumpTarget": false,
+      "planet": {
+        "class": "carbon_world",
+        "composition": "carbon_rich",
+        "atmosphere": "thin",
+        "temperatureK": 240.0,
+        "seed": 4909,
+        "visualOverrides": {
+          "baseColor": [
+            24,
+            22,
+            24,
+            255
+          ],
+          "secondaryColor": [
+            100,
+            42,
+            30,
+            255
+          ],
+          "atmosphereColor": [
+            120,
+            45,
+            35,
+            70
+          ]
+        }
+      }
+    },
+    {
+      "id": "rocky_relay",
+      "name": "Rocky",
       "type": "satellite",
-      "parentId": "aster",
-      "position": [325000.0, 0.0, 0.0],
+      "parentId": "rocky",
+      "position": [
+        430000.0,
+        0.0,
+        23100.000000000004
+      ],
       "visualRadius": 500.0,
-      "color": [80, 140, 255, 255],
+      "color": [
+        130,
+        105,
+        85,
+        255
+      ],
       "isJumpTarget": true
     },
     {
-      "id": "boreal_relay",
-      "name": "Boreal Relay",
+      "id": "barren_moon_relay",
+      "name": "Barren Moon",
       "type": "satellite",
-      "parentId": "boreal",
-      "position": [-700000.0, 0.0, 330000.0],
+      "parentId": "barren_moon",
+      "position": [
+        -430000.0,
+        0.0,
+        202000.0
+      ],
       "visualRadius": 500.0,
-      "color": [80, 220, 120, 255],
+      "color": [
+        125,
+        125,
+        125,
+        255
+      ],
       "isJumpTarget": true
     },
     {
-      "id": "cyra_relay",
-      "name": "Cyra Relay",
+      "id": "ice_world_relay",
+      "name": "Ice World",
       "type": "satellite",
-      "parentId": "cyra",
-      "position": [200000.0, 0.0, -1180000.0],
+      "parentId": "ice_world",
+      "position": [
+        100000.0,
+        0.0,
+        644200.0
+      ],
       "visualRadius": 500.0,
-      "color": [190, 100, 255, 255],
+      "color": [
+        190,
+        220,
+        235,
+        255
+      ],
+      "isJumpTarget": true
+    },
+    {
+      "id": "desert_world_relay",
+      "name": "Desert World",
+      "type": "satellite",
+      "parentId": "desert_world",
+      "position": [
+        -760000.0,
+        0.0,
+        -232500.0
+      ],
+      "visualRadius": 500.0,
+      "color": [
+        195,
+        145,
+        75,
+        255
+      ],
+      "isJumpTarget": true
+    },
+    {
+      "id": "ocean_world_relay",
+      "name": "Ocean World",
+      "type": "satellite",
+      "parentId": "ocean_world",
+      "position": [
+        760000.0,
+        0.0,
+        -390300.0
+      ],
+      "visualRadius": 500.0,
+      "color": [
+        45,
+        90,
+        170,
+        255
+      ],
+      "isJumpTarget": true
+    },
+    {
+      "id": "lava_world_relay",
+      "name": "Lava World",
+      "type": "satellite",
+      "parentId": "lava_world",
+      "position": [
+        260000.0,
+        0.0,
+        -838000.0
+      ],
+      "visualRadius": 500.0,
+      "color": [
+        255,
+        90,
+        20,
+        255
+      ],
+      "isJumpTarget": true
+    },
+    {
+      "id": "gas_giant_relay",
+      "name": "Gas Giant",
+      "type": "satellite",
+      "parentId": "gas_giant",
+      "position": [
+        -980000.0,
+        0.0,
+        681600.0
+      ],
+      "visualRadius": 500.0,
+      "color": [
+        210,
+        160,
+        95,
+        255
+      ],
+      "isJumpTarget": true
+    },
+    {
+      "id": "ice_giant_relay",
+      "name": "Ice Giant",
+      "type": "satellite",
+      "parentId": "ice_giant",
+      "position": [
+        1100000.0,
+        0.0,
+        472800.0
+      ],
+      "visualRadius": 500.0,
+      "color": [
+        90,
+        170,
+        210,
+        255
+      ],
+      "isJumpTarget": true
+    },
+    {
+      "id": "carbon_world_relay",
+      "name": "Carbon World",
+      "type": "satellite",
+      "parentId": "carbon_world",
+      "position": [
+        -220000.0,
+        0.0,
+        -1198000.0
+      ],
+      "visualRadius": 500.0,
+      "color": [
+        95,
+        42,
+        32,
+        255
+      ],
       "isJumpTarget": true
     }
   ]

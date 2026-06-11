@@ -33,6 +33,8 @@ add_executable(SpaceSim
 
     src/game/systems/RenderSystem.cpp
     src/game/systems/RenderSystem.h
+    src/game/systems/BubbleSystem.cpp
+    src/game/systems/BubbleSystem.h
 
     src/game/world/StarSystem.h
 
@@ -44,6 +46,15 @@ add_executable(SpaceSim
 
     src/game/world/StarSystemLoader.cpp
     src/game/world/StarSystemLoader.h
+    src/game/world/PlanetVisualGenerator.cpp
+    src/game/world/PlanetTerrainGenerator.cpp
+    
+
+    src/game/rendering/SpaceBackgroundRenderer.cpp
+    src/game/rendering/DistantBodyRenderer.cpp
+    src/game/rendering/PrototypeMeshRenderer.cpp
+    src/game/rendering/PlanetMeshGenerator.cpp
+    src/game/rendering/PlanetCloudGenerator.cpp
 )
 
 target_include_directories(SpaceSim PRIVATE

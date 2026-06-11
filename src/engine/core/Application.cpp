@@ -3,7 +3,9 @@
 #include "components/PlayerControlledComponent.h"
 #include "components/ShipFlightComponent.h"
 #include "components/TransformComponent.h"
+#include "components/RenderableComponent.h"
 #include "world/StarSystemLoader.h"
+#include "world/SpaceCoordinates.h"
 
 #include <raylib.h>
 #include <raymath.h>
@@ -15,6 +17,19 @@ namespace SpaceSim
         for (int i = 0; i < static_cast<int>(system.objects.size()); ++i)
         {
             if (system.objects[i].id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    int FindFirstJumpTargetIndex(const StarSystem& system)
+    {
+        for (int i = 0; i < static_cast<int>(system.objects.size()); ++i)
+        {
+            if (system.objects[i].isJumpTarget)
             {
                 return i;
             }
@@ -42,9 +57,28 @@ namespace SpaceSim
         m_renderer = std::make_unique<Renderer>(1280, 720, "SpaceSim");
 
         m_world.starSystem = LoadStarSystemFromJson("data/systems/test_system.json");
-        m_world.selectedJumpTarget = FindObjectIndexById(m_world.starSystem, "aster_relay");
+
+        // Pick a valid starting relay. The old prototype used "aster_relay", but
+        // the planet test system now has planet-type relays instead. Never index
+        // starSystem.objects unless we confirmed the index is valid.
+        m_world.selectedJumpTarget = FindObjectIndexById(m_world.starSystem, "rocky_relay");
+
+        if (m_world.selectedJumpTarget < 0)
+        {
+            m_world.selectedJumpTarget = FindFirstJumpTargetIndex(m_world.starSystem);
+        }
+
         m_world.activePoi = m_world.selectedJumpTarget;
-        m_world.activeBubbleOrigin = m_world.starSystem.objects[m_world.activePoi].position;
+
+        if (m_world.activePoi >= 0)
+        {
+            m_world.activeBubbleOrigin = m_world.starSystem.objects[m_world.activePoi].position;
+        }
+        else
+        {
+            m_world.activeBubbleOrigin = DVec3{ 0.0, 0.0, 0.0 };
+        }
+
         m_world.globalPlayerPosition = m_world.activeBubbleOrigin;
 
         createPlayerShip();
@@ -79,6 +113,12 @@ namespace SpaceSim
         m_world.registry.emplace<ShipFlightComponent>(ship);
         m_world.registry.emplace<PlayerControlledComponent>(ship);
 
+        RenderableComponent renderable{};
+        renderable.type = RenderableType::Ship;
+        renderable.color = SKYBLUE;
+
+        m_world.registry.emplace<RenderableComponent>(ship, renderable);
+
         m_world.playerShip = ship;
     }
 
@@ -107,16 +147,12 @@ namespace SpaceSim
 
         const auto& transform = m_world.registry.get<TransformComponent>(m_world.playerShip);
 
-        constexpr double localToGlobalScale = 0.001;
-
         if (m_world.travelMode == TravelMode::NormalFlight)
         {
-            m_world.globalPlayerPosition = {
-                m_world.activeBubbleOrigin.x + transform.position.x * localToGlobalScale,
-                m_world.activeBubbleOrigin.y + transform.position.y * localToGlobalScale,
-                m_world.activeBubbleOrigin.z + transform.position.z * localToGlobalScale
-            };
+            m_world.globalPlayerPosition = LocalToGlobalPosition(m_world, transform.position);
         }
+
+        m_bubbleSystem.update(m_world);
 
         m_cameraSystem.update(m_world, dt);
     }

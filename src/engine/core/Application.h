@@ -7,6 +7,8 @@
 #include "world/GameWorld.h"
 #include "systems/FTLSystem.h"
 #include "systems/StarSystemSystem.h"
+#include "systems/BubbleSystem.h"
+
 #include <memory>
 
 namespace SpaceSim
@@ -38,7 +40,7 @@ namespace SpaceSim
         RenderSystem m_renderSystem;
         FTLSystem m_ftlSystem;
         StarSystemSystem m_starSystemSystem;
-
+        BubbleSystem m_bubbleSystem;
         bool m_mouseCaptured = true;
     };
 }

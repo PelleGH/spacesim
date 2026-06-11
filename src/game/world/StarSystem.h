@@ -1,5 +1,7 @@
 #pragma once
 
+#include "world/PlanetTypes.h"
+
 #include <cmath>
 #include <string>
 #include <vector>
@@ -84,6 +86,9 @@ namespace SpaceSim
         OrbitData orbit{};
 
         bool isJumpTarget = false;
+
+        bool hasPlanetData = false;
+        PlanetData planetData{};
     };
 
     struct StarSystem
