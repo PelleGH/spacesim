@@ -245,7 +245,7 @@ namespace SpaceSim
 
             DrawText(
                 TextFormat(
-                    "FTL Target: %s  Distance: %.0f  [Tab] cycle  [J] travel",
+                    "FTL Target: %s  Distance: %.0f  [Tab] cycle  [J] relay jump  [O] supercruise",
                     target.name.c_str(),
                     Length(toTarget)
                 ),
@@ -256,32 +256,11 @@ namespace SpaceSim
             );
             if (m_world.travelMode == TravelMode::FTLTravel)
                 {
-                    const double distanceToTarget = Length(
-                        m_world.ftlTravel.destination - m_world.globalPlayerPosition
-                    );
-
-                    const bool charging =
-                        m_world.ftlTravel.chargeTimer < m_world.ftlTravel.chargeTime;
-
-                    if (charging)
+                    if (m_world.ftlTravel.targetIndex < 0)
                     {
                         DrawText(
                             TextFormat(
-                                "FTL ALIGNING  Distance: %.0f  [C] cancel",
-                                distanceToTarget
-                            ),
-                            20,
-                            270,
-                            20,
-                            YELLOW
-                        );
-                    }
-                    else
-                    {
-                        DrawText(
-                            TextFormat(
-                                "FTL TRAVEL ACTIVE  Distance: %.0f  Speed: %.0f  [C] drop out",
-                                distanceToTarget,
+                                "SUPERCRUISE FREE ROAM  Speed: %.0f  W/S throttle  Z zero  [O/C] drop out",
                                 m_world.ftlTravel.speed
                             ),
                             20,
@@ -289,6 +268,43 @@ namespace SpaceSim
                             20,
                             SKYBLUE
                         );
+                    }
+                    else
+                    {
+                        const double distanceToTarget = Length(
+                            m_world.ftlTravel.destination - m_world.globalPlayerPosition
+                        );
+
+                        const bool charging =
+                            m_world.ftlTravel.chargeTimer < m_world.ftlTravel.chargeTime;
+
+                        if (charging)
+                        {
+                            DrawText(
+                                TextFormat(
+                                    "RELAY JUMP ALIGNING  Distance: %.0f  [C] cancel",
+                                    distanceToTarget
+                                ),
+                                20,
+                                270,
+                                20,
+                                YELLOW
+                            );
+                        }
+                        else
+                        {
+                            DrawText(
+                                TextFormat(
+                                    "RELAY JUMP ACTIVE  Distance: %.0f  Speed: %.0f  [C] drop out",
+                                    distanceToTarget,
+                                    m_world.ftlTravel.speed
+                                ),
+                                20,
+                                270,
+                                20,
+                                SKYBLUE
+                            );
+                        }
                     }
                 }
         }

@@ -17,6 +17,15 @@ namespace SpaceSim
         };
     }
 
+    static DVec3 ToDoubleVector(Vector3 value)
+    {
+        return DVec3{
+            static_cast<double>(value.x),
+            static_cast<double>(value.y),
+            static_cast<double>(value.z)
+        };
+    }
+
     static Quaternion GetRotationTowardDirection(Vector3 direction)
     {
         direction = Vector3Normalize(direction);
@@ -64,9 +73,17 @@ namespace SpaceSim
                 selectNextJumpTarget(world);
             }
 
+            // J keeps the original relay/jump-point travel.
             if (IsKeyPressed(KEY_J))
             {
                 beginFTLTravel(world);
+            }
+
+            // O is the alternative Elite-style free-roam supercruise mode.
+            // It does not consume or replace the selected relay target.
+            if (IsKeyPressed(KEY_O))
+            {
+                beginSupercruise(world);
             }
 
             return;
@@ -80,7 +97,21 @@ namespace SpaceSim
                 return;
             }
 
-            updateFTLTravel(world, dt);
+            // targetIndex < 0 means free-roam supercruise; targetIndex >= 0 means relay jump.
+            if (world.ftlTravel.targetIndex < 0)
+            {
+                if (IsKeyPressed(KEY_O))
+                {
+                    cancelFTLTravel(world);
+                    return;
+                }
+
+                updateSupercruise(world, dt);
+            }
+            else
+            {
+                updateFTLTravel(world, dt);
+            }
         }
     }
 
@@ -129,8 +160,38 @@ namespace SpaceSim
         world.ftlTravel.start = world.globalPlayerPosition;
         world.ftlTravel.destination = target.position;
         world.ftlTravel.chargeTimer = 0.0f;
+        world.ftlTravel.speed = 250000.0;
 
         world.activePoi = -1;
+
+        ResetPlayerLocalMotion(world, Vector3{ 0.0f, 0.0f, 0.0f });
+    }
+
+    void FTLSystem::beginSupercruise(GameWorld& world)
+    {
+        auto& transform = world.registry.get<TransformComponent>(world.playerShip);
+
+        world.travelMode = TravelMode::FTLTravel;
+
+        // -1 means this is not a relay jump. The selectedJumpTarget is deliberately
+        // left alone so Tab/J still gives you easy return points after dropping out.
+        world.ftlTravel.targetIndex = -1;
+        world.ftlTravel.start = world.globalPlayerPosition;
+
+        Vector3 forward = Vector3RotateByQuaternion(
+            Vector3{ 0.0f, 0.0f, 1.0f },
+            transform.rotation
+        );
+
+        world.ftlTravel.destination =
+            world.globalPlayerPosition + ToDoubleVector(forward) * 1000000000.0;
+
+        // Start nearly stopped so you can inspect planet lighting/glints without overshooting.
+        world.ftlTravel.chargeTimer = world.ftlTravel.chargeTime;
+        world.ftlTravel.speed = 0.0;
+
+        world.activePoi = -1;
+        world.activeBubbleOrigin = world.globalPlayerPosition;
 
         ResetPlayerLocalMotion(world, Vector3{ 0.0f, 0.0f, 0.0f });
     }
@@ -180,6 +241,75 @@ namespace SpaceSim
 
         world.globalPlayerPosition =
             world.globalPlayerPosition + travelDirectionGlobal * travelDistance;
+    }
+
+    void FTLSystem::updateSupercruise(GameWorld& world, float dt)
+    {
+        auto& transform = world.registry.get<TransformComponent>(world.playerShip);
+
+        const Vector2 mouseDelta = GetMouseDelta();
+        const float mouseSensitivity = 0.0022f;
+        const float rollSpeed = 1.75f;
+
+        const float yawRadians = -mouseDelta.x * mouseSensitivity;
+        const float pitchRadians = -mouseDelta.y * mouseSensitivity;
+        float rollRadians = 0.0f;
+
+        if (IsKeyDown(KEY_Q)) rollRadians -= rollSpeed * dt;
+        if (IsKeyDown(KEY_E)) rollRadians += rollSpeed * dt;
+
+        Quaternion pitchRotation = QuaternionFromAxisAngle(Vector3{ 1.0f, 0.0f, 0.0f }, pitchRadians);
+        Quaternion yawRotation = QuaternionFromAxisAngle(Vector3{ 0.0f, 1.0f, 0.0f }, yawRadians);
+        Quaternion rollRotation = QuaternionFromAxisAngle(Vector3{ 0.0f, 0.0f, 1.0f }, rollRadians);
+
+        Quaternion deltaRotation = QuaternionMultiply(
+            QuaternionMultiply(yawRotation, pitchRotation),
+            rollRotation
+        );
+
+        transform.rotation = QuaternionNormalize(QuaternionMultiply(transform.rotation, deltaRotation));
+
+        const double maxSpeed = 1400000.0;
+        const double acceleration = IsKeyDown(KEY_LEFT_SHIFT) ? 700000.0 : 250000.0;
+
+        if (IsKeyDown(KEY_W))
+        {
+            world.ftlTravel.speed += acceleration * static_cast<double>(dt);
+        }
+
+        if (IsKeyDown(KEY_S))
+        {
+            world.ftlTravel.speed -= acceleration * static_cast<double>(dt);
+        }
+
+        if (IsKeyPressed(KEY_Z))
+        {
+            world.ftlTravel.speed = 0.0;
+        }
+
+        if (world.ftlTravel.speed < 0.0)
+        {
+            world.ftlTravel.speed = 0.0;
+        }
+
+        if (world.ftlTravel.speed > maxSpeed)
+        {
+            world.ftlTravel.speed = maxSpeed;
+        }
+
+        Vector3 forward = Vector3RotateByQuaternion(
+            Vector3{ 0.0f, 0.0f, 1.0f },
+            transform.rotation
+        );
+
+        DVec3 travelDirectionGlobal = NormalizeSafe(ToDoubleVector(forward));
+
+        world.globalPlayerPosition =
+            world.globalPlayerPosition +
+            travelDirectionGlobal * (world.ftlTravel.speed * static_cast<double>(dt));
+
+        world.activeBubbleOrigin = world.globalPlayerPosition;
+        transform.position = Vector3{ 0.0f, 0.0f, 0.0f };
     }
 
     void FTLSystem::arriveFromFTLTravel(GameWorld& world)

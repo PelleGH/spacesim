@@ -5,6 +5,10 @@
 #include <raymath.h>
 #include <rlgl.h>
 
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <vector>
 
 namespace SpaceSim
@@ -24,6 +28,150 @@ namespace SpaceSim
             Vector3 axisA{};
             Vector3 axisB{};
         };
+
+        constexpr std::uint32_t PlanetMeshCacheVersion = 2u;
+
+        struct MeshCacheHeader
+        {
+            char magic[8]{ 'S', 'P', 'M', 'E', 'S', 'H', '0', '1' };
+            std::uint32_t version = PlanetMeshCacheVersion;
+            std::uint32_t vertexCount = 0u;
+            std::uint32_t indexCount = 0u;
+        };
+
+        static std::string SanitizeCachePart(const std::string& value)
+        {
+            std::string result;
+            result.reserve(value.size());
+
+            for (char c : value)
+            {
+                const bool valid =
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '_' ||
+                    c == '-';
+
+                result.push_back(valid ? c : '_');
+            }
+
+            if (result.empty())
+            {
+                return "object";
+            }
+
+            return result;
+        }
+
+        static std::filesystem::path GetPlanetMeshCachePath(
+            const GlobalObject& object,
+            int faceResolution
+        )
+        {
+            // Version is intentionally part of the filename.
+            // Increase PlanetMeshCacheVersion when terrain/color generation changes.
+            std::string filename =
+                "planetmesh_v" + std::to_string(PlanetMeshCacheVersion) +
+                "_r" + std::to_string(faceResolution) +
+                "_" + SanitizeCachePart(object.id);
+
+            if (object.hasPlanetData)
+            {
+                filename +=
+                    "_c" + std::to_string(static_cast<int>(object.planetData.planetClass)) +
+                    "_comp" + std::to_string(static_cast<int>(object.planetData.composition)) +
+                    "_atm" + std::to_string(static_cast<int>(object.planetData.atmosphere)) +
+                    "_seed" + std::to_string(object.planetData.seed);
+            }
+
+            filename += ".bin";
+
+            return std::filesystem::path("cache") / "planet_meshes" / filename;
+        }
+
+        static bool LoadPlanetMeshCache(
+            const std::filesystem::path& path,
+            std::vector<VertexData>& vertices,
+            std::vector<unsigned short>& indices
+        )
+        {
+            std::ifstream file(path, std::ios::binary);
+            if (!file)
+            {
+                return false;
+            }
+
+            MeshCacheHeader header{};
+            file.read(reinterpret_cast<char*>(&header), sizeof(header));
+
+            const std::array<char, 8> expectedMagic{
+                'S', 'P', 'M', 'E', 'S', 'H', '0', '1'
+            };
+
+            if (!file ||
+                std::array<char, 8>{
+                    header.magic[0], header.magic[1], header.magic[2], header.magic[3],
+                    header.magic[4], header.magic[5], header.magic[6], header.magic[7]
+                } != expectedMagic ||
+                header.version != PlanetMeshCacheVersion ||
+                header.vertexCount == 0u ||
+                header.indexCount == 0u)
+            {
+                return false;
+            }
+
+            vertices.resize(static_cast<std::size_t>(header.vertexCount));
+            indices.resize(static_cast<std::size_t>(header.indexCount));
+
+            file.read(
+                reinterpret_cast<char*>(vertices.data()),
+                static_cast<std::streamsize>(vertices.size() * sizeof(VertexData))
+            );
+
+            file.read(
+                reinterpret_cast<char*>(indices.data()),
+                static_cast<std::streamsize>(indices.size() * sizeof(unsigned short))
+            );
+
+            return file.good();
+        }
+
+        static void SavePlanetMeshCache(
+            const std::filesystem::path& path,
+            const std::vector<VertexData>& vertices,
+            const std::vector<unsigned short>& indices
+        )
+        {
+            std::error_code error;
+            std::filesystem::create_directories(path.parent_path(), error);
+
+            if (error)
+            {
+                return;
+            }
+
+            std::ofstream file(path, std::ios::binary | std::ios::trunc);
+            if (!file)
+            {
+                return;
+            }
+
+            MeshCacheHeader header{};
+            header.vertexCount = static_cast<std::uint32_t>(vertices.size());
+            header.indexCount = static_cast<std::uint32_t>(indices.size());
+
+            file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+            file.write(
+                reinterpret_cast<const char*>(vertices.data()),
+                static_cast<std::streamsize>(vertices.size() * sizeof(VertexData))
+            );
+            file.write(
+                reinterpret_cast<const char*>(indices.data()),
+                static_cast<std::streamsize>(indices.size() * sizeof(unsigned short))
+            );
+        }
+
 
         static FaceBasis GetFaceBasis(int face)
         {
@@ -168,12 +316,28 @@ namespace SpaceSim
         std::vector<VertexData> vertices;
         std::vector<unsigned short> indices;
 
-        vertices.reserve(6 * (faceResolution + 1) * (faceResolution + 1));
-        indices.reserve(6 * faceResolution * faceResolution * 6);
+        const std::filesystem::path cachePath = GetPlanetMeshCachePath(
+            object,
+            faceResolution
+        );
 
-        for (int face = 0; face < 6; ++face)
+        const bool loadedFromCache = LoadPlanetMeshCache(
+            cachePath,
+            vertices,
+            indices
+        );
+
+        if (!loadedFromCache)
         {
-            AddFace(object, face, faceResolution, vertices, indices);
+            vertices.reserve(6 * (faceResolution + 1) * (faceResolution + 1));
+            indices.reserve(6 * faceResolution * faceResolution * 6);
+
+            for (int face = 0; face < 6; ++face)
+            {
+                AddFace(object, face, faceResolution, vertices, indices);
+            }
+
+            SavePlanetMeshCache(cachePath, vertices, indices);
         }
 
         Mesh mesh{};

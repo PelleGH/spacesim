@@ -13,7 +13,11 @@ namespace SpaceSim
         void selectNextJumpTarget(GameWorld& world);
 
         void beginFTLTravel(GameWorld& world);
+        void beginSupercruise(GameWorld& world);
+
         void updateFTLTravel(GameWorld& world, float dt);
+        void updateSupercruise(GameWorld& world, float dt);
+
         void arriveFromFTLTravel(GameWorld& world);
         void cancelFTLTravel(GameWorld& world);
     };

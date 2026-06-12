@@ -209,12 +209,18 @@ namespace SpaceSim
         {
             float continents = FractalNoise3D(direction, 2.2f, data.seed + 100u);
 
-            float landMask = SmoothStep((continents - 0.56f) / 0.09f);
+            float landMask = SmoothStep((continents - 0.54f) / 0.10f);
 
             float broad = FractalNoise3D(direction, 4.5f, data.seed + 180u);
             float mountains = RidgedNoise3D(direction, 9.0f, data.seed + 200u);
+            float detail = FractalNoise3D(direction, 20.0f, data.seed + 220u);
 
-            float landHeight = 0.0008f + broad * 0.0012f + mountains * 0.0015f;
+            // Stronger land relief so the planet stops reading like a smooth painted sphere.
+            float landHeight =
+                0.0025f +
+                broad * 0.0035f +
+                mountains * 0.0065f +
+                detail * 0.0015f;
 
             return landMask * landHeight;
         }
@@ -322,14 +328,14 @@ namespace SpaceSim
                     surface = MultiplyColor(land, 0.85f + detail * 0.18f);
                 }
 
-                return ApplyOrbitalLighting(surface, data.planetClass, direction);
+                return surface;
             }
             case PlanetClass::IceWorld:
             {
                 Color ice = LerpColor(visual.baseColor, Color{ 230, 240, 245, 255 }, broad * 0.35f);
                 Color surface = MultiplyColor(ice, 0.90f + detail * 0.12f);
 
-                return ApplyOrbitalLighting(surface, data.planetClass, direction);
+                return surface;
             }
 
             case PlanetClass::DesertWorld:
@@ -337,7 +343,7 @@ namespace SpaceSim
                 Color sand = LerpColor(visual.baseColor, visual.secondaryColor, broad * 0.55f);
                 Color surface = MultiplyColor(sand, 0.88f + detail * 0.14f);
 
-                return ApplyOrbitalLighting(surface, data.planetClass, direction);
+                return surface;
             }
 
             case PlanetClass::CarbonWorld:
@@ -345,7 +351,7 @@ namespace SpaceSim
                 Color carbon = LerpColor(visual.baseColor, visual.secondaryColor, broad * 0.35f);
                 Color surface = MultiplyColor(carbon, 0.95f + detail * 0.35f);
 
-                return ApplyOrbitalLighting(surface, data.planetClass, direction);
+                return surface;
             }
 
             case PlanetClass::LavaWorld:
@@ -384,7 +390,7 @@ namespace SpaceSim
                 Color surface = LerpColor(warmCrust, hotLava, lavaMask);
 
                 bool emissive = lavaMask > 0.12f;
-                return ApplyOrbitalLighting(surface, data.planetClass, direction, emissive);
+                return surface;
             }
             case PlanetClass::GasGiant:
             case PlanetClass::IceGiant:
@@ -403,7 +409,7 @@ namespace SpaceSim
                 Color bandColor = LerpColor(visual.baseColor, visual.secondaryColor, t);
                 Color surface = MultiplyColor(bandColor, 0.92f + detail * 0.08f);
 
-                return ApplyOrbitalLighting(surface, data.planetClass, direction);
+                return surface;
             }
 
             case PlanetClass::BarrenMoon:
@@ -413,7 +419,7 @@ namespace SpaceSim
                 Color rock = LerpColor(visual.baseColor, visual.secondaryColor, broad * 0.65f);
                 Color surface = MultiplyColor(rock, 0.78f + detail * 0.25f);
 
-                return ApplyOrbitalLighting(surface, data.planetClass, direction);
+                return surface;
             }
             }
         }
