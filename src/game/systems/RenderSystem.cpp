@@ -1,6 +1,10 @@
 #include "systems/RenderSystem.h"
 
 #include "components/TransformComponent.h"
+#include "renderer/Lighting.h"
+#include "renderer/Material.h"
+#include "renderer/RenderDebugView.h"
+#include "rendering/MaskedPlanetRenderer.h"
 
 #include <raylib.h>
 #include <raymath.h>
@@ -9,8 +13,115 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 namespace SpaceSim
 {
+    static Vector3 ToRenderDirection(DVec3 relative)
+{
+    DVec3 direction = Normalize(relative);
+
+    return Vector3{
+        static_cast<float>(direction.x),
+        static_cast<float>(direction.y),
+        static_cast<float>(direction.z)
+    };
+}
+    static Vector3 ColorToVector3(Color color)
+    {
+        return Vector3{
+            static_cast<float>(color.r) / 255.0f,
+            static_cast<float>(color.g) / 255.0f,
+            static_cast<float>(color.b) / 255.0f
+        };
+    }
+
+    static const GlobalObject* FindPrimarySun(const GameWorld& world)
+    {
+        for (const GlobalObject& object : world.starSystem.objects)
+        {
+            if (object.type == GlobalObjectType::Sun)
+            {
+                return &object;
+            }
+        }
+
+        return nullptr;
+    }
+
+    static LightingEnvironment BuildLightingForDistantBody(
+        const GameWorld& world,
+        const GlobalObject& object
+    )
+    {
+        LightingEnvironment lighting{};
+
+        const GlobalObject* sun = FindPrimarySun(world);
+
+        if (sun != nullptr)
+        {
+            DVec3 objectToSun = sun->position - object.position;
+
+            lighting.sun.directionToLight = ToRenderDirection(objectToSun);
+            lighting.sun.color = ColorToVector3(sun->color);
+            lighting.sun.intensity = 1.35f;
+        }
+        else
+        {
+            lighting.sun.directionToLight = Vector3Normalize(Vector3{ -0.6f, 0.35f, -0.72f });
+            lighting.sun.color = Vector3{ 1.0f, 0.96f, 0.88f };
+            lighting.sun.intensity = 1.0f;
+        }
+
+        lighting.ambientColor = Vector3{ 1.0f, 1.0f, 1.0f };
+        lighting.ambientIntensity = 0.012f;
+
+        return lighting;
+    }
+static bool IsOceanTestBody(const GlobalObject& object)
+{
+    if (object.type != GlobalObjectType::Planet)
+    {
+        return false;
+    }
+
+    return object.color.b > object.color.r &&
+        object.color.b > object.color.g;
+}
+    static MaterialParams BuildTestMaterialForDistantBody(const GlobalObject& object)
+    {
+        MaterialParams material{};
+
+        material.albedo = ColorToVector3(object.color);
+
+        if (object.type == GlobalObjectType::Sun)
+        {
+            material.albedo = ColorToVector3(object.color);
+            material.roughness = 0.2f;
+            material.specularStrength = 0.0f;
+            material.diffuseStrength = 1.0f;
+            return material;
+        }
+
+        // Temporary test rule:
+        // blue planets are treated like glossy ocean worlds.
+        if (IsOceanTestBody(object))
+        {
+            // Water-like test material.
+            material.albedo = Vector3{ 0.015f, 0.08f, 0.30f };
+            material.roughness = 0.12f;
+            material.specularStrength = 1.6f;
+            material.diffuseStrength = 0.22f;
+        }
+        else
+        {
+            // Matte rocky/land-like test material.
+            material.roughness = 0.88f;
+            material.specularStrength = 0.035f;
+            material.diffuseStrength = 1.0f;
+        }
+
+        return material;
+    }
 static Texture2D GetStarGlowTexture()
 {
     static bool initialized = false;
@@ -272,16 +383,7 @@ static void DrawProceduralStarfield(const Camera3D& camera)
     }
 }
     
-    static Vector3 ToRenderDirection(DVec3 relative)
-    {
-        DVec3 direction = Normalize(relative);
 
-        return Vector3{
-            static_cast<float>(direction.x),
-            static_cast<float>(direction.y),
-            static_cast<float>(direction.z)
-        };
-    }
 
     static void DrawSatellite(Vector3 satellitePos, Color panelColor)
     {
@@ -317,9 +419,14 @@ static void DrawProceduralStarfield(const Camera3D& camera)
     }
     struct SkyBodyDrawCommand
     {
+        const GlobalObject* object = nullptr;
+
         Vector3 position{};
         float radius = 1.0f;
-        Color color = WHITE;
+
+        MaterialParams material{};
+        LightingEnvironment lighting{};
+
         double globalDistance = 0.0;
     };
 
@@ -340,18 +447,32 @@ static void DrawProceduralStarfield(const Camera3D& camera)
 
         return Clamp(radius, 3.0f, 500.0f);
     }
-
-    static void DrawDistantStarSystem3D(const GameWorld& world)
+    static const char* PlanetClassName(PlanetClass planetClass)
     {
-
+        switch (planetClass)
+        {
+        case PlanetClass::Ocean: return "Ocean";
+        case PlanetClass::Rocky: return "Rocky";
+        case PlanetClass::Ice: return "Ice";
+        case PlanetClass::Desert: return "Desert";
+        case PlanetClass::Barren: return "Barren";
+        default: return "Unknown";
+        }
+    }
+    static void DrawDistantStarSystem3D(
+        const GameWorld& world,
+        const Camera3D& skyCamera,
+        LitMeshRenderer& litMeshRenderer,
+        MaskedPlanetRenderer& maskedPlanetRenderer,
+        RenderDebugView debugView
+    )
+    {
         constexpr float skyDistance = 900.0f;
 
         std::vector<SkyBodyDrawCommand> drawCommands;
 
-        for (const auto& object : world.starSystem.objects)
+        for (const GlobalObject& object : world.starSystem.objects)
         {
-            int objectIndex = static_cast<int>(&object - world.starSystem.objects.data());
-
             if (!IsCelestialBody(object.type))
             {
                 continue;
@@ -374,12 +495,15 @@ static void DrawProceduralStarfield(const Camera3D& camera)
                 skyDistance
             );
 
-            drawCommands.push_back(SkyBodyDrawCommand{
-                skyPos,
-                radius,
-                object.color,
-                globalDistance
-            });
+            SkyBodyDrawCommand command{};
+            command.object = &object;
+            command.position = skyPos;
+            command.radius = radius;
+            command.globalDistance = globalDistance;
+            command.material = BuildTestMaterialForDistantBody(object);
+            command.lighting = BuildLightingForDistantBody(world, object);
+
+            drawCommands.push_back(command);
         }
 
         // Depth is disabled in the sky pass, so draw order controls occlusion.
@@ -395,7 +519,50 @@ static void DrawProceduralStarfield(const Camera3D& camera)
 
         for (const SkyBodyDrawCommand& command : drawCommands)
         {
-            DrawSphere(command.position, command.radius, command.color);
+            if (command.object == nullptr)
+            {
+                continue;
+            }
+
+            if (command.object->type == GlobalObjectType::Sun)
+            {
+                // Keep the sun simple/emissive for now.
+                DrawSphere(command.position, command.radius, command.object->color);
+
+                // Small visual glow. This is not lighting; it is just the sun sprite/body.
+                BeginBlendMode(BLEND_ADDITIVE);
+                DrawSphere(
+                    command.position,
+                    command.radius * 1.18f,
+                    Fade(command.object->color, 0.20f)
+                );
+                EndBlendMode();
+
+                continue;
+            }
+
+            if (command.object->type == GlobalObjectType::Planet)
+            {
+                maskedPlanetRenderer.drawSphere(
+                    *command.object,
+                    command.position,
+                    command.radius,
+                    command.lighting,
+                    skyCamera,
+                    debugView
+                );
+            }
+            else
+            {
+                litMeshRenderer.drawSphere(
+                    command.position,
+                    command.radius,
+                    command.material,
+                    command.lighting,
+                    skyCamera,
+                    debugView
+                );
+            }
         }
     }
     static Vector3 GlobalToLocalPosition(const GameWorld& world, DVec3 globalPosition)
@@ -447,6 +614,18 @@ static void DrawProceduralStarfield(const Camera3D& camera)
             }
         }
     }
+    RenderDebugView RenderSystem::getDebugView() const
+    {
+        if (IsKeyDown(KEY_F2)) return RenderDebugView::Albedo;
+        if (IsKeyDown(KEY_F3)) return RenderDebugView::Normal;
+        if (IsKeyDown(KEY_F4)) return RenderDebugView::NdotL;
+        if (IsKeyDown(KEY_F5)) return RenderDebugView::Diffuse;
+        if (IsKeyDown(KEY_F6)) return RenderDebugView::Specular;
+        if (IsKeyDown(KEY_F7)) return RenderDebugView::Roughness;
+        if (IsKeyDown(KEY_F8)) return RenderDebugView::MaterialMask;
+
+        return RenderDebugView::Final;
+    }
     void RenderSystem::renderSky(GameWorld& world, Renderer& renderer)
     {
         (void)renderer;
@@ -477,7 +656,24 @@ static void DrawProceduralStarfield(const Camera3D& camera)
         rlDrawRenderBatchActive();
         rlSetTexture(0);
 
-        DrawDistantStarSystem3D(world);
+        if (!m_litMeshRenderer)
+        {
+            m_litMeshRenderer = std::make_unique<LitMeshRenderer>();
+        }
+
+        if (!m_maskedPlanetRenderer)
+        {
+            m_maskedPlanetRenderer = std::make_unique<MaskedPlanetRenderer>();
+        }
+
+        DrawDistantStarSystem3D(
+            world,
+            skyCamera,
+            *m_litMeshRenderer,
+            *m_maskedPlanetRenderer,
+            getDebugView()
+        );
+
         rlDrawRenderBatchActive();
 
         // Restore normal depth behavior before leaving the sky pass.
@@ -490,6 +686,24 @@ static void DrawProceduralStarfield(const Camera3D& camera)
     void RenderSystem::renderWorld(GameWorld& world, Renderer& renderer)
     {
         (void)renderer;
+
+        RenderDebugView debugView = getDebugView();
+
+        if (IsKeyDown(KEY_F10))
+        {
+            if (!m_litMeshRenderer)
+            {
+                m_litMeshRenderer = std::make_unique<LitMeshRenderer>();
+            }
+
+            m_materialTestSceneRenderer.render(
+                *m_litMeshRenderer,
+                world.camera,
+                debugView
+            );
+
+            return;
+        }
 
         if (world.travelMode == TravelMode::FTLTravel)
         {

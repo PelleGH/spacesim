@@ -17,7 +17,8 @@
       "position": [300000.0, 0.0, 0.0],
       "visualRadius": 12000.0,
       "color": [80, 140, 255, 255],
-      "isJumpTarget": false
+      "isJumpTarget": false,
+      "planetClass": "rocky"
     },
     {
       "id": "boreal",
@@ -26,16 +27,18 @@
       "position": [-700000.0, 0.0, 300000.0],
       "visualRadius": 18000.0,
       "color": [80, 220, 120, 255],
-      "isJumpTarget": false
+      "isJumpTarget": false,
+      "planetClass": "desert"
     },
     {
       "id": "cyra",
       "name": "Cyra",
       "type": "planet",
-      "position": [200000.0, 0.0, -1200000.0],
-      "visualRadius": 9000.0,
-      "color": [190, 100, 255, 255],
-      "isJumpTarget": false
+      "position": [200000, 0, -1180000],
+      "visualRadius": 65000,
+      "color": [80, 120, 255, 255],
+      "planetClass": "ocean",
+      "isJumpTarget": true
     },
     {
       "id": "aster_relay",
@@ -45,7 +48,8 @@
       "position": [325000.0, 0.0, 0.0],
       "visualRadius": 500.0,
       "color": [80, 140, 255, 255],
-      "isJumpTarget": true
+      "isJumpTarget": true,
+      "planetClass": "barren"
     },
     {
       "id": "boreal_relay",
@@ -55,7 +59,8 @@
       "position": [-700000.0, 0.0, 330000.0],
       "visualRadius": 500.0,
       "color": [80, 220, 120, 255],
-      "isJumpTarget": true
+      "isJumpTarget": true,
+      "planetClass": "barren"
     },
     {
       "id": "cyra_relay",
@@ -65,7 +70,8 @@
       "position": [200000.0, 0.0, -1180000.0],
       "visualRadius": 500.0,
       "color": [190, 100, 255, 255],
-      "isJumpTarget": true
+      "isJumpTarget": true,
+      "planetClass": "barren"
     }
   ]
 }

@@ -56,6 +56,14 @@ namespace SpaceSim
         Satellite
     };
 
+    enum class PlanetClass
+    {
+        Ocean,
+        Rocky,
+        Ice,
+        Desert,
+        Barren
+    };
     struct OrbitData
     {
         int parentIndex = -1;
@@ -77,6 +85,8 @@ namespace SpaceSim
 
         Color color = WHITE;
 
+        PlanetClass planetClass = PlanetClass::Rocky;
+        
         std::string parentId;
         int parentIndex = -1;
 

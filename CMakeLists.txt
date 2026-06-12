@@ -44,6 +44,16 @@ add_executable(SpaceSim
 
     src/game/world/StarSystemLoader.cpp
     src/game/world/StarSystemLoader.h
+    src/engine/renderer/Lighting.h
+    src/engine/renderer/Material.h
+    src/engine/renderer/RenderDebugView.h
+    src/engine/renderer/LitMeshRenderer.cpp
+    src/engine/renderer/LitMeshRenderer.h
+
+    src/game/rendering/MaterialTestSceneRenderer.cpp
+    src/game/rendering/MaterialTestSceneRenderer.h
+    src/game/rendering/MaskedPlanetRenderer.cpp
+    src/game/rendering/PlanetSurfaceMapGenerator.cpp
 )
 
 target_include_directories(SpaceSim PRIVATE

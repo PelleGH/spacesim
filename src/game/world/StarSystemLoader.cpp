@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 namespace SpaceSim
@@ -26,7 +27,16 @@ namespace SpaceSim
             json.at(3).get<unsigned char>()
         };
     }
+    static PlanetClass ParsePlanetClass(const std::string& value)
+    {
+        if (value == "ocean") return PlanetClass::Ocean;
+        if (value == "rocky") return PlanetClass::Rocky;
+        if (value == "ice") return PlanetClass::Ice;
+        if (value == "desert") return PlanetClass::Desert;
+        if (value == "barren") return PlanetClass::Barren;
 
+        return PlanetClass::Rocky;
+    }
     static GlobalObjectType ReadObjectType(const std::string& type)
     {
         if (type == "sun")
@@ -76,6 +86,12 @@ namespace SpaceSim
             object.color = objectJson.contains("color")
                 ? ReadColor(objectJson.at("color"))
                 : WHITE;
+            if (objectJson.contains("planetClass"))
+            {
+                object.planetClass = ParsePlanetClass(
+                    objectJson.value("planetClass", "rocky")
+                );
+            }
             object.parentId = objectJson.value("parentId", "");
             object.isJumpTarget = objectJson.value("isJumpTarget", false);
 
