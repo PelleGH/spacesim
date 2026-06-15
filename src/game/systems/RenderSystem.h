@@ -2,6 +2,7 @@
 
 #include "renderer/Renderer.h"
 #include "world/GameWorld.h"
+#include "rendering/PlanetRenderer.h"
 
 namespace SpaceSim
 {
@@ -10,5 +11,8 @@ namespace SpaceSim
     public:
         void renderSky(GameWorld& world, Renderer& renderer);
         void renderWorld(GameWorld& world, Renderer& renderer);
+
+    private:
+        PlanetRenderer m_planetRenderer;
     };
 }

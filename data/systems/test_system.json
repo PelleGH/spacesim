@@ -11,32 +11,45 @@
       "isJumpTarget": false
     },
     {
-      "id": "aster",
-      "name": "Aster",
-      "type": "planet",
-      "position": [300000.0, 0.0, 0.0],
-      "visualRadius": 12000.0,
-      "color": [80, 140, 255, 255],
-      "isJumpTarget": false
-    },
-    {
-      "id": "boreal",
-      "name": "Boreal",
-      "type": "planet",
-      "position": [-700000.0, 0.0, 300000.0],
-      "visualRadius": 18000.0,
-      "color": [80, 220, 120, 255],
-      "isJumpTarget": false
-    },
-    {
-      "id": "cyra",
-      "name": "Cyra",
-      "type": "planet",
-      "position": [200000.0, 0.0, -1200000.0],
-      "visualRadius": 9000.0,
-      "color": [190, 100, 255, 255],
-      "isJumpTarget": false
-    },
+  "id": "aster",
+  "name": "Aster",
+  "type": "planet",
+  "planetClass": "earthlike",
+  "position": [300000.0, 0.0, 0.0],
+  "visualRadius": 12000.0,
+  "color": [80, 140, 255, 255],
+  "isJumpTarget": false
+},
+{
+  "id": "boreal",
+  "name": "Boreal",
+  "type": "planet",
+  "planetClass": "ice",
+  "position": [-700000.0, 0.0, 300000.0],
+  "visualRadius": 18000.0,
+  "color": [80, 220, 120, 255],
+  "isJumpTarget": false
+},
+{
+  "id": "cyra",
+  "name": "Cyra",
+  "type": "planet",
+  "planetClass": "desert",
+  "position": [200000.0, 0.0, -1200000.0],
+  "visualRadius": 9000.0,
+  "color": [190, 100, 255, 255],
+  "isJumpTarget": false
+},
+{
+  "id": "jovia",
+  "name": "Jovia",
+  "type": "planet",
+  "planetClass": "gas_giant",
+  "position": [-1200000.0, 0.0, -600000.0],
+  "visualRadius": 35000.0,
+  "color": [220, 170, 110, 255],
+  "isJumpTarget": false
+},
     {
       "id": "aster_relay",
       "name": "Aster Relay",
@@ -66,6 +79,16 @@
       "visualRadius": 500.0,
       "color": [190, 100, 255, 255],
       "isJumpTarget": true
-    }
+    },
+    {
+  "id": "jovia_relay",
+  "name": "Jovia Relay",
+  "type": "satellite",
+  "parentId": "jovia",
+  "position": [-1200000.0, 0.0, -540000.0],
+  "visualRadius": 500.0,
+  "color": [220, 170, 110, 255],
+  "isJumpTarget": true
+}
   ]
 }

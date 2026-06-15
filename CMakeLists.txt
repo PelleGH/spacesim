@@ -44,6 +44,9 @@ add_executable(SpaceSim
 
     src/game/world/StarSystemLoader.cpp
     src/game/world/StarSystemLoader.h
+
+    src/game/rendering/PlanetRenderer.cpp
+    src/game/rendering/PlanetRenderer.h
 )
 
 target_include_directories(SpaceSim PRIVATE

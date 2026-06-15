@@ -55,7 +55,15 @@ namespace SpaceSim
         Planet,
         Satellite
     };
-
+    enum class PlanetClass
+    {
+        EarthLike,
+        Desert,
+        Ice,
+        Barren,
+        Ocean,
+        GasGiant
+    };
     struct OrbitData
     {
         int parentIndex = -1;
@@ -70,7 +78,8 @@ namespace SpaceSim
         std::string name;
 
         GlobalObjectType type = GlobalObjectType::Planet;
-
+        PlanetClass planetClass = PlanetClass::EarthLike;
+        
         DVec3 position{};
 
         double visualRadius = 1.0;

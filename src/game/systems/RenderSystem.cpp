@@ -338,20 +338,123 @@ static void DrawProceduralStarfield(const Camera3D& camera)
             object.visualRadius / globalDistance * static_cast<double>(skyDistance)
         );
 
-        return Clamp(radius, 3.0f, 500.0f);
+        return Clamp(radius, 25.0f, 500.0f);
     }
 
-    static void DrawDistantStarSystem3D(const GameWorld& world)
+    static int FindSunIndex(const GameWorld& world)
     {
+        for (int i = 0; i < static_cast<int>(world.starSystem.objects.size()); ++i)
+        {
+            if (world.starSystem.objects[i].type == GlobalObjectType::Sun)
+            {
+                return i;
+            }
+        }
 
+        return -1;
+    }
+
+    static int StableSeedFromId(const std::string& id)
+    {
+        unsigned int hash = 2166136261u;
+
+        for (char c : id)
+        {
+            hash ^= static_cast<unsigned int>(c);
+            hash *= 16777619u;
+        }
+
+        return static_cast<int>(hash & 0x7fffffff);
+    }
+    static int PlanetTypeToShaderType(PlanetClass planetClass)
+    {
+        switch (planetClass)
+        {
+        case PlanetClass::EarthLike:
+            return 0;
+        case PlanetClass::Desert:
+            return 1;
+        case PlanetClass::Ice:
+            return 2;
+        case PlanetClass::Barren:
+            return 3;
+        case PlanetClass::Ocean:
+            return 4;
+        case PlanetClass::GasGiant:
+            return 0;
+        default:
+            return 0;
+        }
+    }
+    static void ConfigurePlanetParamsForClass(
+        PlanetClass planetClass,
+        PlanetRenderParams& params
+    )
+    {
+        params.planetType = PlanetTypeToShaderType(planetClass);
+
+        switch (planetClass)
+        {
+        case PlanetClass::EarthLike:
+            params.seaLevel = 0.505f;
+            params.cloudStrength = 1.25f;
+            params.atmosphereStrength = 1.0f;
+            break;
+
+        case PlanetClass::Desert:
+            params.seaLevel = 0.0f;
+            params.cloudStrength = 0.05f;
+            params.atmosphereStrength = 0.35f;
+            break;
+
+        case PlanetClass::Ice:
+            params.seaLevel = 0.0f;
+            params.cloudStrength = 0.15f;
+            params.atmosphereStrength = 0.45f;
+            break;
+
+        case PlanetClass::Barren:
+            params.seaLevel = 0.0f;
+            params.cloudStrength = 0.0f;
+            params.atmosphereStrength = 0.0f;
+            break;
+
+        case PlanetClass::Ocean:
+            params.seaLevel = 0.585f;
+            params.cloudStrength = 1.35f;
+            params.atmosphereStrength = 1.1f;
+            break;
+
+        case PlanetClass::GasGiant:
+            params.seaLevel = 0.0f;
+            params.cloudStrength = 0.0f;
+            params.atmosphereStrength = 0.9f;
+            break;
+
+        default:
+            break;
+        }
+    }
+    void DrawDistantStarSystem3D(
+        const GameWorld& world,
+        const Camera3D& skyCamera,
+        PlanetRenderer& planetRenderer
+    )
+    {
         constexpr float skyDistance = 900.0f;
 
-        std::vector<SkyBodyDrawCommand> drawCommands;
+        struct DrawCommand
+        {
+            const GlobalObject* object = nullptr;
+            Vector3 position{};
+            float radius = 1.0f;
+            double globalDistance = 0.0;
+        };
+
+        std::vector<DrawCommand> drawCommands;
 
         for (const auto& object : world.starSystem.objects)
         {
-            int objectIndex = static_cast<int>(&object - world.starSystem.objects.data());
-
             if (!IsCelestialBody(object.type))
             {
                 continue;
@@ -374,28 +477,70 @@ static void DrawProceduralStarfield(const Camera3D& camera)
                 skyDistance
             );
 
-            drawCommands.push_back(SkyBodyDrawCommand{
+            drawCommands.push_back(DrawCommand{
+                &object,
                 skyPos,
                 radius,
-                object.color,
                 globalDistance
             });
         }
 
-        // Depth is disabled in the sky pass, so draw order controls occlusion.
-        // Far objects first, near objects last.
         std::sort(
             drawCommands.begin(),
             drawCommands.end(),
-            [](const SkyBodyDrawCommand& a, const SkyBodyDrawCommand& b)
+            [](const DrawCommand& a, const DrawCommand& b)
             {
                 return a.globalDistance > b.globalDistance;
             }
         );
 
-        for (const SkyBodyDrawCommand& command : drawCommands)
+        const int sunIndex = FindSunIndex(world);
+
+        for (const DrawCommand& command : drawCommands)
         {
-            DrawSphere(command.position, command.radius, command.color);
+            const GlobalObject& object = *command.object;
+
+            if (object.type == GlobalObjectType::Sun)
+            {
+                planetRenderer.drawSun(command.position, 35.0f, object.color);
+                continue;
+            }
+            if (object.type != GlobalObjectType::Planet)
+            {
+                DrawSphere(command.position, command.radius, object.color);
+                continue;
+            }
+            Vector3 lightDirection{ 1.0f, 0.0f, 0.0f };
+
+            if (sunIndex >= 0)
+            {
+                const GlobalObject& sun = world.starSystem.objects[sunIndex];
+                DVec3 planetToSun = sun.position - object.position;
+                DVec3 planetToSunDir = Normalize(planetToSun);
+
+                lightDirection = Vector3{
+                    static_cast<float>(planetToSunDir.x),
+                    static_cast<float>(planetToSunDir.y),
+                    static_cast<float>(planetToSunDir.z)
+                };
+            }
+
+            PlanetRenderParams params;
+            params.position = command.position;
+            params.radius = command.radius;
+            params.lightDirection = lightDirection;
+            params.seed = StableSeedFromId(object.id);
+
+            ConfigurePlanetParamsForClass(object.planetClass, params);
+
+            if (object.planetClass == PlanetClass::GasGiant)
+            {
+                planetRenderer.drawGasGiantPlanet(skyCamera, params);
+            }
+            else
+            {
+                planetRenderer.drawEarthLikePlanet(skyCamera, params);
+            }
         }
     }
     static Vector3 GlobalToLocalPosition(const GameWorld& world, DVec3 globalPosition)
@@ -477,7 +622,7 @@ static void DrawProceduralStarfield(const Camera3D& camera)
         rlDrawRenderBatchActive();
         rlSetTexture(0);
 
-        DrawDistantStarSystem3D(world);
+        DrawDistantStarSystem3D(world, skyCamera, m_planetRenderer);
         rlDrawRenderBatchActive();
 
         // Restore normal depth behavior before leaving the sky pass.

@@ -46,7 +46,40 @@ namespace SpaceSim
 
         throw std::runtime_error("Unknown global object type: " + type);
     }
+    static PlanetClass ReadPlanetClass(const std::string& planetClass)
+    {
+        if (planetClass == "earthlike")
+        {
+            return PlanetClass::EarthLike;
+        }
 
+        if (planetClass == "desert")
+        {
+            return PlanetClass::Desert;
+        }
+
+        if (planetClass == "ice")
+        {
+            return PlanetClass::Ice;
+        }
+
+        if (planetClass == "barren")
+        {
+            return PlanetClass::Barren;
+        }
+
+        if (planetClass == "ocean")
+        {
+            return PlanetClass::Ocean;
+        }
+
+        if (planetClass == "gas_giant")
+        {
+            return PlanetClass::GasGiant;
+        }
+
+        throw std::runtime_error("Unknown planet class: " + planetClass);
+    }
     StarSystem LoadStarSystemFromJson(const std::string& path)
     {
         std::ifstream file(path);
@@ -71,6 +104,12 @@ namespace SpaceSim
             object.id = objectJson.at("id").get<std::string>();
             object.name = objectJson.at("name").get<std::string>();
             object.type = ReadObjectType(objectJson.at("type").get<std::string>());
+            if (object.type == GlobalObjectType::Planet)
+            {
+                object.planetClass = ReadPlanetClass(
+                    objectJson.value("planetClass", "earthlike")
+                );
+            }
             object.position = ReadDVec3(objectJson.at("position"));
             object.visualRadius = objectJson.value("visualRadius", 1.0);
             object.color = objectJson.contains("color")
