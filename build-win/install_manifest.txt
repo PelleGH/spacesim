@@ -1,0 +1,9 @@
+/home/shaya/spacesim/dist/SpaceSim/lib/libraylib.a
+/home/shaya/spacesim/dist/SpaceSim/include/raylib.h
+/home/shaya/spacesim/dist/SpaceSim/include/rlgl.h
+/home/shaya/spacesim/dist/SpaceSim/include/raymath.h
+/home/shaya/spacesim/dist/SpaceSim/lib/pkgconfig/raylib.pc
+/home/shaya/spacesim/dist/SpaceSim/lib/cmake/raylib/raylib-config-version.cmake
+/home/shaya/spacesim/dist/SpaceSim/lib/cmake/raylib/raylib-config.cmake
+/home/shaya/spacesim/dist/SpaceSim/SpaceSim.exe
+/home/shaya/spacesim/dist/SpaceSim/data/systems/test_system.json
