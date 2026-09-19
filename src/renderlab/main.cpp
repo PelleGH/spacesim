@@ -1,114 +1,179 @@
 #include "platform/SdlGlWindow.h"
 
-#include "renderer/opengl/GlShader.h"
+#include "renderer/RenderCamera.h"
+#include "renderer/RenderObject.h"
+#include "renderer/SceneRenderer.h"
+#include "renderer/lighting/DirectionalLight.h"
 #include "renderer/opengl/GpuMesh.h"
-#include "renderer/opengl/HdrRenderTarget.h"
-#include "renderer/opengl/PostProcessPass.h"
+#include <glm/ext/matrix_transform.hpp>
 
-#include "renderlab/SphereGenerator.h"
-
-#include <glad/gl.h>
+#include "renderlab/BoxGenerator.h"
 
 #include <SDL3/SDL.h>
 
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
 #include <glm/geometric.hpp>
-#include <glm/vec3.hpp>
 
 #include <exception>
 #include <iostream>
-
-namespace
-{
-    struct TestMaterial
-    {
-        glm::vec3 position;
-        glm::vec3 baseColor;
-
-        float metallic;
-        float roughness;
-    };
-}
+#include <vector>
 
 int main()
 {
     try
     {
+        // ---------------------------------------------------------
+        // Window / platform
+        // ---------------------------------------------------------
+
         SpaceSim::SdlGlWindow window(
             1280,
             720,
-            "SpaceSim PBR Lighting Lab");
+            "SpaceSim Renderer Lab");
 
-        SpaceSim::HdrRenderTarget hdrTarget;
+        // ---------------------------------------------------------
+        // Renderer
+        // ---------------------------------------------------------
 
-        SpaceSim::PostProcessPass postProcess;
+        SpaceSim::SceneRenderer renderer;
 
-        SpaceSim::GlShader pbrShader(
-            "data/shaders/renderer/pbr.vert",
-            "data/shaders/renderer/pbr.frag");
+        renderer.setExposure(1.0f);
 
-        const SpaceSim::SphereMeshData sphereData =
-            SpaceSim::generateSphere(
-                64,
-                32);
+        // ---------------------------------------------------------
+        // Temporary ship mesh
+        // ---------------------------------------------------------
 
-        SpaceSim::GpuMesh sphere(
-            sphereData.vertices,
-            sphereData.indices);
+        const SpaceSim::BoxMeshData shipData =
+            SpaceSim::generateBox(
+                2.0f,  // width
+                0.8f,  // height
+                4.0f); // length
 
-        const glm::vec3 cameraPosition(
-            0.0f,
-            0.0f,
-            8.0f);
+        SpaceSim::GpuMesh shipMesh(
+            shipData.vertices,
+            shipData.indices);
 
-        const glm::vec3 sunDirection =
+        const SpaceSim::BoxMeshData floorData =
+            SpaceSim::generateBox(
+                12.0f,
+                0.2f,
+                12.0f);
+
+        SpaceSim::GpuMesh floorMesh(
+            floorData.vertices,
+            floorData.indices);
+
+        // ---------------------------------------------------------
+        // Camera
+        // ---------------------------------------------------------
+
+        SpaceSim::RenderCamera camera;
+
+        camera.position =
+            {
+                5.0f,
+                3.0f,
+                7.0f};
+
+        camera.forward =
+            glm::normalize(
+                -camera.position);
+
+        camera.up =
+            {
+                0.0f,
+                1.0f,
+                0.0f};
+
+        camera.verticalFovDegrees =
+            45.0f;
+
+        camera.nearPlane =
+            0.1f;
+
+        camera.farPlane =
+            100.0f;
+
+        // ---------------------------------------------------------
+        // Primary star
+        // ---------------------------------------------------------
+
+        SpaceSim::DirectionalLight sun;
+
+        sun.direction =
             glm::normalize(
                 glm::vec3(
                     -0.5f,
-                    0.7f,
-                    0.8f));
+                    0.8f,
+                    0.6f));
 
-        // HDR light intensity.
-        const glm::vec3 sunRadiance(
-            15.0f,
-            14.5f,
-            13.5f);
-
-        const TestMaterial materials[] =
-        {
-            // Rough dielectric
+        sun.radiance =
             {
-                glm::vec3(-1.7f, 1.4f, 0.0f),
-                glm::vec3(0.55f, 0.08f, 0.04f),
-                0.0f,
-                0.80f
-            },
+                15.0f,
+                14.5f,
+                13.5f};
 
-            // Smooth dielectric
-            {
-                glm::vec3(1.7f, 1.4f, 0.0f),
-                glm::vec3(0.55f, 0.08f, 0.04f),
-                0.0f,
-                0.15f
-            },
+        // ---------------------------------------------------------
+        // Temporary ship render object
+        // ---------------------------------------------------------
 
-            // Rough metal
-            {
-                glm::vec3(-1.7f, -1.4f, 0.0f),
-                glm::vec3(0.90f, 0.55f, 0.25f),
-                1.0f,
-                0.65f
-            },
+        SpaceSim::RenderObject ship;
 
-            // Smooth metal
+        ship.mesh =
+            &shipMesh;
+
+        ship.modelMatrix =
+            glm::mat4(1.0f);
+
+        ship.material.baseColor =
             {
-                glm::vec3(1.7f, -1.4f, 0.0f),
-                glm::vec3(0.90f, 0.55f, 0.25f),
-                1.0f,
-                0.12f
-            }
-        };
+                0.25f,
+                0.30f,
+                0.35f};
+
+        ship.material.metallic =
+            0.35f;
+
+        ship.material.roughness =
+            0.40f;
+
+        std::vector<SpaceSim::RenderObject> objects;
+
+        objects.push_back(ship);
+
+        // ---------------------------------------------------------
+        // Temporary floor for shadow testing
+        // ---------------------------------------------------------
+
+        SpaceSim::RenderObject floor;
+
+        floor.mesh =
+            &floorMesh;
+
+        floor.modelMatrix =
+            glm::translate(
+                glm::mat4(1.0f),
+                glm::vec3(
+                    0.0f,
+                    -1.2f,
+                    0.0f));
+
+        floor.material.baseColor =
+            {
+                0.15f,
+                0.16f,
+                0.18f};
+
+        floor.material.metallic =
+            0.0f;
+
+        floor.material.roughness =
+            0.8f;
+
+        objects.push_back(floor);
+
+        // ---------------------------------------------------------
+        // Main loop
+        // ---------------------------------------------------------
 
         while (window.processEvents())
         {
@@ -125,135 +190,19 @@ int main()
                 continue;
             }
 
-            hdrTarget.resize(
+            renderer.render(
                 width,
-                height);
-
-            const float aspectRatio =
-                static_cast<float>(width) /
-                static_cast<float>(height);
-
-            const glm::mat4 view =
-                glm::lookAt(
-                    cameraPosition,
-                    glm::vec3(0.0f),
-                    glm::vec3(
-                        0.0f,
-                        1.0f,
-                        0.0f));
-
-            const glm::mat4 projection =
-                glm::perspective(
-                    glm::radians(45.0f),
-                    aspectRatio,
-                    0.1f,
-                    100.0f);
-
-            // =====================================================
-            // HDR 3D SCENE
-            // =====================================================
-
-            hdrTarget.bind();
-
-            glViewport(
-                0,
-                0,
-                width,
-                height);
-
-            const GLfloat background[4] =
-            {
-                0.001f,
-                0.0015f,
-                0.003f,
-                1.0f
-            };
-
-            glClearBufferfv(
-                GL_COLOR,
-                0,
-                background);
-
-            glClear(
-                GL_DEPTH_BUFFER_BIT);
-
-            glEnable(GL_DEPTH_TEST);
-
-            pbrShader.use();
-
-            pbrShader.setMat4(
-                "view",
-                view);
-
-            pbrShader.setMat4(
-                "projection",
-                projection);
-
-            pbrShader.setVec3(
-                "cameraPosition",
-                cameraPosition);
-
-            pbrShader.setVec3(
-                "sunDirection",
-                sunDirection);
-
-            pbrShader.setVec3(
-                "sunRadiance",
-                sunRadiance);
-
-            for (const TestMaterial& material :
-                 materials)
-            {
-                glm::mat4 model(1.0f);
-
-                model =
-                    glm::translate(
-                        model,
-                        material.position);
-
-                pbrShader.setMat4(
-                    "model",
-                    model);
-
-                pbrShader.setVec3(
-                    "baseColor",
-                    material.baseColor);
-
-                pbrShader.setFloat(
-                    "metallic",
-                    material.metallic);
-
-                pbrShader.setFloat(
-                    "roughness",
-                    material.roughness);
-
-                sphere.draw();
-            }
-
-            // =====================================================
-            // HDR -> DISPLAY
-            // =====================================================
-
-            glBindFramebuffer(
-                GL_FRAMEBUFFER,
-                0);
-
-            glViewport(
-                0,
-                0,
-                width,
-                height);
-
-            postProcess.render(
-                hdrTarget.colorTexture(),
-                1.0f);
+                height,
+                camera,
+                sun,
+                objects);
 
             window.swapBuffers();
         }
 
         return 0;
     }
-    catch (const std::exception& exception)
+    catch (const std::exception &exception)
     {
         std::cerr
             << "RendererLab fatal error: "

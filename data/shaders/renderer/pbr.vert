@@ -7,19 +7,25 @@ layout(location = 2) in vec2 inTexCoord;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 lightSpaceMatrix;
 
 out VS_OUT
 {
     vec3 worldPosition;
     vec3 worldNormal;
     vec2 texCoord;
+
+    vec4 lightSpacePosition;
 } vsOut;
 
 void main()
 {
     vec4 worldPosition =
         model * vec4(inPosition, 1.0);
-
+    vsOut.lightSpacePosition =
+        lightSpaceMatrix *
+        worldPosition;
+        
     vsOut.worldPosition =
         worldPosition.xyz;
 

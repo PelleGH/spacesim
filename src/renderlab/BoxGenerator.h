@@ -7,13 +7,14 @@
 
 namespace SpaceSim
 {
-    struct SphereMeshData
+    struct BoxMeshData
     {
         std::vector<MeshVertex> vertices;
         std::vector<std::uint32_t> indices;
     };
 
-    SphereMeshData generateSphere(
-        std::uint32_t horizontalSegments,
-        std::uint32_t verticalSegments);
+    BoxMeshData generateBox(
+        float width,
+        float height,
+        float length);
 }

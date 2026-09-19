@@ -7,6 +7,8 @@ in VS_OUT
     vec3 worldPosition;
     vec3 worldNormal;
     vec2 texCoord;
+
+    vec4 lightSpacePosition;
 } fsIn;
 
 uniform vec3 cameraPosition;
@@ -20,7 +22,7 @@ uniform vec3 sunRadiance;
 uniform vec3 baseColor;
 uniform float metallic;
 uniform float roughness;
-
+uniform sampler2D shadowMap;
 const float PI =
     3.14159265359;
 
@@ -110,7 +112,81 @@ vec3 fresnelSchlick(
             1.0 - cosTheta,
             5.0);
 }
+float calculateShadow(
+    vec4 lightSpacePosition,
+    vec3 normal,
+    vec3 lightDirection)
+{
+    // Perspective divide.
+    vec3 projected =
+        lightSpacePosition.xyz /
+        lightSpacePosition.w;
 
+    // Convert OpenGL clip coordinates:
+    // [-1, +1]
+    //
+    // into texture coordinates:
+    // [0, 1]
+    projected =
+        projected * 0.5 + 0.5;
+
+    // Outside the sun camera's depth range.
+    if (projected.z < 0.0 ||
+        projected.z > 1.0)
+    {
+        return 0.0;
+    }
+
+    float currentDepth =
+        projected.z;
+
+    // Prevent the surface from incorrectly shadowing itself.
+    float bias =
+        max(
+            0.0025 *
+            (
+                1.0 -
+                dot(
+                    normal,
+                    lightDirection)
+            ),
+            0.0005);
+
+    vec2 texelSize =
+        1.0 /
+        vec2(
+            textureSize(
+                shadowMap,
+                0));
+
+    float shadow =
+        0.0;
+
+    // 3x3 percentage-closer filtering.
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            const float closestDepth =
+                texture(
+                    shadowMap,
+                    projected.xy +
+                    vec2(x, y) *
+                    texelSize
+                ).r;
+
+            if (currentDepth - bias >
+                closestDepth)
+            {
+                shadow += 1.0;
+            }
+        }
+    }
+
+    shadow /= 9.0;
+
+    return shadow;
+}
 void main()
 {
     vec3 N =
@@ -123,6 +199,12 @@ void main()
 
     vec3 L =
         normalize(sunDirection);
+
+    float shadow =
+        calculateShadow(
+            fsIn.lightSpacePosition,
+            N,
+            L);
 
     vec3 H =
         normalize(V + L);
@@ -198,7 +280,8 @@ void main()
             specular
         ) *
         sunRadiance *
-        NdotL;
+        NdotL *
+        (1.0 - shadow);
 
     // Deliberately no fake ambient light yet.
     outColor =

@@ -1,7 +1,7 @@
 #include "renderlab/SphereGenerator.h"
 
 #include <glm/geometric.hpp>
-
+#include "renderer/MeshVertex.h"
 #include <cmath>
 #include <numbers>
 

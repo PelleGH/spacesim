@@ -3,6 +3,7 @@
 #include "renderer/RenderCamera.h"
 #include "renderer/RenderObject.h"
 #include "renderer/lighting/DirectionalLight.h"
+#include "renderer/opengl/ShadowMap.h"
 
 #include "renderer/opengl/GlShader.h"
 #include "renderer/opengl/HdrRenderTarget.h"
@@ -38,6 +39,9 @@ namespace SpaceSim
         HdrRenderTarget m_hdrTarget;
 
         GlShader m_pbrShader;
+        GlShader m_shadowShader;
+
+        ShadowMap m_shadowMap;
 
         PostProcessPass m_postProcess;
 

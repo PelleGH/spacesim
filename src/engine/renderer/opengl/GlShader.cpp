@@ -56,6 +56,21 @@ namespace SpaceSim
             GL_FALSE,
             glm::value_ptr(value));
     }
+
+    void GlShader::setInt(
+        const char *name,
+        int value) const
+    {
+        const GLint location =
+            glGetUniformLocation(
+                m_program,
+                name);
+
+        glProgramUniform1i(
+            m_program,
+            location,
+            value);
+    }
     namespace
     {
         std::string readTextFile(
