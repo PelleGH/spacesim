@@ -35,7 +35,12 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR cmake
 )
-
+FetchContent_Declare(
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG 1.0.1
+    GIT_SHALLOW TRUE
+)
 FetchContent_Declare(
     raylib
     GIT_REPOSITORY https://github.com/raysan5/raylib.git
@@ -63,6 +68,7 @@ FetchContent_MakeAvailable(
     nlohmann_json
     SDL3
     glad
+    glm
 )
 glad_add_library(
     glad_gl_core_45
@@ -154,8 +160,35 @@ target_link_libraries(SpaceSim PRIVATE
 add_executable(RendererLab
     src/renderlab/main.cpp
 
+    src/renderlab/SphereGenerator.cpp
+    src/renderlab/SphereGenerator.h
+
     src/engine/platform/SdlGlWindow.cpp
     src/engine/platform/SdlGlWindow.h
+
+    src/engine/renderer/opengl/GlShader.cpp
+    src/engine/renderer/opengl/GlShader.h
+
+    src/engine/renderer/opengl/GpuMesh.cpp
+    src/engine/renderer/opengl/GpuMesh.h
+
+    src/engine/renderer/opengl/HdrRenderTarget.cpp
+    src/engine/renderer/opengl/HdrRenderTarget.h
+
+    src/engine/renderer/opengl/PostProcessPass.cpp
+    src/engine/renderer/opengl/PostProcessPass.h
+
+    src/engine/renderer/RenderCamera.cpp
+    src/engine/renderer/RenderCamera.h
+
+    src/engine/renderer/RenderObject.h
+
+    src/engine/renderer/SceneRenderer.cpp
+    src/engine/renderer/SceneRenderer.h
+
+    src/engine/renderer/lighting/DirectionalLight.h
+
+    src/engine/renderer/material/PbrMaterial.h
 )
 
 target_include_directories(RendererLab PRIVATE
@@ -166,6 +199,7 @@ target_include_directories(RendererLab PRIVATE
 target_link_libraries(RendererLab PRIVATE
     SDL3::SDL3
     glad_gl_core_45
+    glm::glm
 )
 # Make each build runnable directly from Explorer, like the installed package.
 add_custom_command(TARGET SpaceSim POST_BUILD
