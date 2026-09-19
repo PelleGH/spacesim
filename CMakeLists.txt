@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(SpaceSim LANGUAGES CXX)
+project(SpaceSim LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,31 @@ include(FetchContent)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+# ---------------------------------------------------------------------------
+# New renderer backend dependencies
+# ---------------------------------------------------------------------------
+
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    SDL3
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_TAG release-3.4.16
+    GIT_SHALLOW TRUE
+)
+FetchContent_Declare(
+    glad
+    GIT_REPOSITORY https://github.com/Dav1dde/glad.git
+    GIT_TAG v2.0.8
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR cmake
+)
 
 FetchContent_Declare(
     raylib
@@ -36,8 +61,15 @@ FetchContent_MakeAvailable(
     raylib
     EnTT
     nlohmann_json
+    SDL3
+    glad
 )
-
+glad_add_library(
+    glad_gl_core_45
+    STATIC
+    REPRODUCIBLE
+    API gl:core=4.5
+)
 add_executable(SpaceSim
     src/main.cpp
 
@@ -113,7 +145,28 @@ target_link_libraries(SpaceSim PRIVATE
     EnTT::EnTT
     nlohmann_json::nlohmann_json
 )
+# ---------------------------------------------------------------------------
+# Experimental SDL3/OpenGL renderer.
+#
+# This runs beside the existing Raylib game while the renderer is rebuilt.
+# ---------------------------------------------------------------------------
 
+add_executable(RendererLab
+    src/renderlab/main.cpp
+
+    src/engine/platform/SdlGlWindow.cpp
+    src/engine/platform/SdlGlWindow.h
+)
+
+target_include_directories(RendererLab PRIVATE
+    src
+    src/engine
+)
+
+target_link_libraries(RendererLab PRIVATE
+    SDL3::SDL3
+    glad_gl_core_45
+)
 # Make each build runnable directly from Explorer, like the installed package.
 add_custom_command(TARGET SpaceSim POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -125,6 +178,7 @@ add_custom_command(TARGET SpaceSim POST_BUILD
 # Keep the Windows build portable.
 if(WIN32 AND CMAKE_CROSSCOMPILING)
     target_link_options(SpaceSim PRIVATE -static)
+    target_link_options(RendererLab PRIVATE -static)
 endif()
 
 # Package executable + game data.
