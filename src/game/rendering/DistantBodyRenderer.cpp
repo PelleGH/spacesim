@@ -2,6 +2,7 @@
 #include "world/PlanetVisualGenerator.h"
 #include "rendering/PlanetMeshGenerator.h"
 #include "rendering/PlanetCloudGenerator.h"
+#include "planet/PlanetSurfaceSampler.h"
 #include <rlgl.h>
 
 #include <raylib.h>
@@ -16,6 +17,23 @@ namespace SpaceSim
 {
     namespace
     {
+        // One weather field for both visible clouds and their projected shadows.
+        std::string WithWeatherField(const char* source)
+        {
+            std::string result(source);
+            const std::string marker = "/* WEATHER_FIELD */";
+            const auto at = result.find(marker);
+            if (at != std::string::npos) result.replace(at, marker.size(), R"(
+                float cloudDensity(vec3 dir, float seed) {
+                    vec3 p = dir * 3.4 + vec3(seed);
+                    float broad = noise(p);
+                    float cells = noise(dir * 13.0 + vec3(seed * 1.71));
+                    float edge = noise(dir * 47.0 + vec3(seed * 2.37));
+                    return smoothstep(0.48, 0.72, broad * 0.67 + cells * 0.25 + edge * 0.08);
+                }
+            )");
+            return result;
+        }
         static float GetCloudShellScale(const GlobalObject& object)
         {
             if (!object.hasPlanetData)
@@ -26,7 +44,7 @@ namespace SpaceSim
             switch (object.planetData.planetClass)
             {
             case PlanetClass::OceanWorld:
-                return 1.055f;   // needs more clearance because terrain + cloud coverage
+                return 1.006f;   // thin cloud layer above physically scaled terrain
             case PlanetClass::DesertWorld:
                 return 1.035f;
             case PlanetClass::Rocky:
@@ -42,6 +60,8 @@ namespace SpaceSim
 
         static float GetAtmosphereShellScale(const GlobalObject& object)
         {
+            if (object.hasPlanetData && object.planetData.planetClass == PlanetClass::OceanWorld)
+                return 1.012f;
             return GetCloudShellScale(object) + 0.012f;
         }
         static bool ShouldDrawAtmosphere(const GlobalObject& object, const PlanetVisual& visual)
@@ -65,7 +85,7 @@ namespace SpaceSim
                 return model;
             }
 
-            Mesh mesh = GenMeshSphere(1.0f, 64, 32);
+            Mesh mesh = GenMeshSphere(1.0f, 128, 64);
             model = LoadModelFromMesh(mesh);
 
             loaded = true;
@@ -112,6 +132,8 @@ namespace SpaceSim
         out vec4 finalColor;
 
         uniform vec3 planetCenter;
+        uniform vec3 cameraPosition;
+        uniform float planetRadius;
         uniform vec3 atmosphereColor;
         uniform vec3 sunDir;
         uniform float strength;
@@ -121,16 +143,20 @@ namespace SpaceSim
             vec3 normal = normalize(fragNormal);
 
             // Camera is effectively at local origin for this sky/distant-body render.
-            vec3 viewDir = normalize(-fragWorldPos);
+            vec3 viewDir = normalize(cameraPosition - fragWorldPos);
 
             float viewDot = clamp(dot(normal, viewDir), 0.0, 1.0);
 
             // Fresnel rim: visible mainly at the edge, not across the whole sphere.
-            float rim = pow(1.0 - viewDot, 6.0);
+            float rim = pow(1.0 - viewDot, 2.0);
 
             // More atmosphere on the sunlit edge, but still faint on night edge.
             float day = smoothstep(-0.25, 0.45, dot(normal, normalize(sunDir)));
-            float alpha = rim * mix(0.0, 0.32, day) * strength;
+            vec3 cameraOffset = cameraPosition - planetCenter;
+            float impact = length(cross(cameraOffset, -viewDir)) / planetRadius;
+            float outerHeight = max(impact - 1.0, 0.0) / 0.012;
+            float density = exp(-outerHeight * 3.5) * (1.0 - smoothstep(0.7, 1.0, outerHeight));
+            float alpha = clamp((0.025 + rim * 0.55) * density * day * strength, 0.0, 0.60);
 
             // Cut extremely low alpha so the full shell does not become a visible bubble.
             if (alpha < 0.01)
@@ -170,14 +196,28 @@ namespace SpaceSim
 
         out vec3 fragWorldPos;
         out vec3 fragNormal;
+        out vec3 fragSurfaceDirection;
+        uniform vec3 planetCenter;
         out vec4 fragVertexColor;
+
+        uniform float planetSeed;
+        uniform float bumpDetail;
+        out vec3 fragBumpNormal;
+        out float fragElevation;
+        uniform float planetRadius;
+        uniform float terrainUnitsPerRadius;
 
         void main()
         {
             vec4 worldPos = matModel * vec4(vertexPosition, 1.0);
 
             fragWorldPos = worldPos.xyz;
+            fragSurfaceDirection = worldPos.xyz - planetCenter;
             fragNormal = normalize(mat3(matModel) * vertexNormal);
+            // Use normals from the actual displaced terrain, shared by both LODs.
+            if (dot(fragNormal, fragSurfaceDirection) < 0.0) fragNormal = -fragNormal;
+            fragBumpNormal = fragNormal;
+            fragElevation = (length(fragSurfaceDirection) / planetRadius - 1.0) * terrainUnitsPerRadius;
             fragVertexColor = vertexColor;
 
             gl_Position = mvp * vec4(vertexPosition, 1.0);
@@ -189,18 +229,31 @@ namespace SpaceSim
 
         in vec3 fragWorldPos;
         in vec3 fragNormal;
+        in vec3 fragSurfaceDirection;
+        uniform vec3 cameraPosition;
+        in vec3 fragBumpNormal;
+        uniform float groundDetail;
+        in float fragElevation;
         in vec4 fragVertexColor;
 
         out vec4 finalColor;
 
         uniform float planetSeed;
         uniform vec3 sunDir;
+        uniform vec3 sunColor;
+        uniform float sunIntensity;
+        uniform vec3 ambientColor;
+        uniform float ambientIntensity;
+        // 0 = unlit albedo, 1 = geometric normals, 2 = lit.
+        uniform int lightingDebugMode;
 
         float hash(vec3 p)
         {
-            p = fract(p * 0.3183099 + vec3(0.11, 0.17, 0.13));
-            p *= 17.0;
-            return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+            uvec3 q = uvec3(ivec3(p));
+            uint h = q.x * 374761393u ^ q.y * 668265263u ^ q.z * 2246822519u;
+            h = (h ^ (h >> 13u)) * 1274126177u;
+            h ^= h >> 16u;
+            return float(h & 0x00ffffffu) / 16777215.0;
         }
 
         float noise(vec3 p)
@@ -245,97 +298,80 @@ namespace SpaceSim
 
             return total;
         }
-        float terrainHeight(vec3 dir, float seed)
-        {
-            float continents = fbm(dir * 2.15 + vec3(seed));
-            float detail = fbm(dir * 10.0 + vec3(seed * 1.73));
-            float fine = fbm(dir * 24.0 + vec3(seed * 2.19));
-
-            float landMask = smoothstep(0.535, 0.600, continents);
-
-            float mountains = smoothstep(0.68, 0.95, detail);
-            float roughness = fine * 0.18 + mountains * 0.55;
-
-            float coastFade = smoothstep(0.600, 0.670, continents);
-
-            return landMask * coastFade * roughness;
-        }
-
-        vec3 perturbNormal(vec3 dir, float seed)
-        {
-            vec3 up = abs(dir.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-
-            vec3 tangent = normalize(cross(up, dir));
-            vec3 bitangent = normalize(cross(dir, tangent));
-
-            float e = 0.006;
-
-            float h0 = terrainHeight(dir, seed);
-            float hx = terrainHeight(normalize(dir + tangent * e), seed);
-            float hy = terrainHeight(normalize(dir + bitangent * e), seed);
-
-            float strength = 0.055;
-
-            vec3 bumped = normalize(dir - tangent * (hx - h0) * strength - bitangent * (hy - h0) * strength);
-
-            return bumped;
-        }
+        /* WEATHER_FIELD */
         void main()
         {
             vec3 sphereNormal = normalize(fragNormal);
-            vec3 dir = sphereNormal;
+            vec3 dir = normalize(fragSurfaceDirection);
 
-            vec3 normal = perturbNormal(dir, planetSeed);
+            vec3 normal = normalize(fragBumpNormal);
 
             vec3 sun = normalize(sunDir);
-            vec3 viewDir = normalize(-fragWorldPos);
+            vec3 viewDir = normalize(cameraPosition - fragWorldPos);
 
             // Continents / coastlines.
-            float continents = fbm(dir * 2.15 + vec3(planetSeed));
+            float continents = fbm(dir * 2.15 + vec3(planetSeed)) +
+                (noise(dir * 38.0 + vec3(planetSeed * 0.61)) - 0.5) * 0.012;
             float detail = fbm(dir * 16.0 + vec3(planetSeed * 1.73));
             float fine = fbm(dir * 42.0 + vec3(planetSeed * 2.19));
 
             // Lower thresholds = more land.
             // The previous 0.590/0.635 made this seed almost all ocean.
             float landRaw = continents;
-            float landMask = smoothstep(0.535, 0.600, landRaw);
+            float landMask = smoothstep(0.535, 0.540, landRaw);
 
             // Coastal/shallow band just below land.
-            float coastBand = smoothstep(0.485, 0.545, landRaw) * (1.0 - landMask);
+            float coastBand = smoothstep(0.528, 0.537, landRaw) * (1.0 - landMask);
             float shallowMask = coastBand;
 
             // Ocean colors: muted, but not black.
-            vec3 deepOcean = vec3(0.012, 0.075, 0.190);
-            vec3 midOcean = vec3(0.028, 0.145, 0.340);
-            vec3 shallowOcean = vec3(0.075, 0.255, 0.350);
+            vec3 deepOcean = vec3(0.010, 0.042, 0.095);
+            vec3 midOcean = vec3(0.018, 0.105, 0.210);
+            vec3 shallowOcean = vec3(0.030, 0.220, 0.245);
 
             float oceanVariation = fbm(dir * 4.0 + vec3(planetSeed * 0.41));
-            vec3 oceanColor = mix(deepOcean, midOcean, oceanVariation * 0.25);
-            oceanColor = mix(oceanColor, shallowOcean, shallowMask * 0.85);
+            vec3 oceanColor = mix(deepOcean, midOcean, oceanVariation * 0.65);
+            oceanColor = mix(oceanColor, shallowOcean, shallowMask * 0.65);
 
             // Land material variation.
             float landDetail = detail * 0.70 + fine * 0.30;
             float dryness = fbm(dir * 5.0 + vec3(planetSeed * 0.91));
             float latitude = abs(dir.y);
 
-            float rockMask = smoothstep(0.68, 0.90, detail);
-            float dryMask = smoothstep(0.58, 0.86, dryness);
-            float coldMask = smoothstep(0.72, 0.96, latitude);
+            float elevation = max(fragElevation, 0.0);
+            float slope = 1.0 - max(dot(normal, dir), 0.0);
+            float rockMask = max(smoothstep(10.0, 25.0, elevation), smoothstep(0.08, 0.35, slope));
+            float dryMask = smoothstep(0.35, 0.60, dryness) * (1.0 - smoothstep(0.55, 0.85, latitude));
+            float coldMask = max(smoothstep(0.78, 0.95, latitude), smoothstep(29.0, 40.0, elevation) * smoothstep(0.28, 0.70, latitude));
 
             // Muted terrain palette.
-            vec3 lushLand = vec3(0.075, 0.170, 0.075);
-            vec3 temperateLand = vec3(0.165, 0.230, 0.115);
-            vec3 dryLand = vec3(0.320, 0.275, 0.165);
+            vec3 lushLand = vec3(0.045, 0.115, 0.055);
+            vec3 temperateLand = vec3(0.18, 0.235, 0.10);
+            vec3 dryLand = vec3(0.48, 0.34, 0.16);
             vec3 rockyLand = vec3(0.255, 0.245, 0.215);
-            vec3 coldLand = vec3(0.430, 0.450, 0.410);
+            vec3 coldLand = vec3(0.58, 0.64, 0.66);
 
             vec3 landColor = mix(lushLand, temperateLand, smoothstep(0.25, 0.75, landDetail));
-            landColor = mix(landColor, dryLand, dryMask * 0.45);
-            landColor = mix(landColor, rockyLand, rockMask * 0.35);
-            landColor = mix(landColor, coldLand, coldMask * 0.35);
+            landColor = mix(landColor, dryLand, dryMask * 0.90);
+            landColor = mix(landColor, rockyLand, rockMask * 0.88);
+            landColor = mix(landColor, coldLand, coldMask * 0.95);
 
             // Final surface blend.
             vec3 baseColor = mix(oceanColor, landColor, landMask);
+
+            // Broad rock strata and soil pockets become visible only on approach.
+            // Filter subpixel detail and avoid uncorrelated, high-contrast grain.
+            if (groundDetail > 0.0 && landMask > 0.0)
+            {
+                float footprint = max(length(dFdx(dir)), length(dFdy(dir)));
+                float rock = noise(dir * 180.0 + vec3(planetSeed * 0.43));
+                float soil = noise(dir * 640.0 + vec3(planetSeed * 0.87));
+                soil = mix(soil, 0.5, smoothstep(0.3, 1.2, footprint * 640.0));
+                float strata = smoothstep(0.35, 0.65, rock * 0.8 + soil * 0.2);
+                vec3 mineral = mix(vec3(0.82, 0.86, 0.90), vec3(1.10, 1.05, 0.94), strata);
+                baseColor *= mix(vec3(1.0), mineral,
+                    groundDetail * landMask * (1.0 - smoothstep(0.4, 1.4, footprint * 180.0)));
+            }
 
             // Subtle coastal tint.
             vec3 coastTint = vec3(0.100, 0.290, 0.330);
@@ -345,64 +381,187 @@ namespace SpaceSim
             float gray = dot(baseColor, vec3(0.299, 0.587, 0.114));
             baseColor = mix(vec3(gray), baseColor, 0.82);
 
-            // Soft sunlight.
-            float ndotl = dot(normal, sun);
-            float day = smoothstep(-0.20, 0.42, ndotl);
+            // Debug modes deliberately stop before lighting so geography/material
+            // problems can be separated from normal and illumination problems.
+            if (lightingDebugMode == 0)
+            {
+                finalColor = vec4(clamp(baseColor, 0.0, 1.0), 1.0);
+                return;
+            }
+            if (lightingDebugMode == 1)
+            {
+                finalColor = vec4(normal * 0.5 + 0.5, 1.0);
+                return;
+            }
 
-            float ambient = 0.30;
-            float sunlight = 0.95;
-            vec3 litColor = baseColor * (ambient + day * sunlight);
+            // Authoritative scene lighting. Geometry/material generation stays unlit;
+            // illumination is evaluated every draw from the shared star state.
+            float surfaceNdotL = max(dot(normal, sun), 0.0);
+            float sphereNdotL = dot(dir, sun);
+            float day = smoothstep(-0.03, 0.08, sphereNdotL);
 
-            // Gentle exposure lift. Keeps the night side readable without making it flat.
-            litColor = litColor * 1.18;
+            vec3 directLight = baseColor * sunColor * (sunIntensity * surfaceNdotL);
+            vec3 indirectLight = baseColor * ambientColor * ambientIntensity;
 
-            // Fake ocean specular. Only on water, mostly on day side.
+            // Trace sunlight to the same cloud shell used for the visible weather.
+            // Clouds attenuate direct sunlight, not the ambient term.
+            float mu = dot(dir, sun);
+            float cloudRay = -mu + sqrt(max(0.0, mu * mu + 1.006 * 1.006 - 1.0));
+            float shadow = cloudDensity(normalize(dir + sun * cloudRay), planetSeed);
+            directLight *= 1.0 - shadow * 0.32 * day;
+
+            vec3 litColor = indirectLight + directLight;
+
+            // Retain a restrained placeholder aerial-perspective cue until the
+            // dedicated atmosphere-scattering milestone replaces it.
+            float horizon = pow(1.0 - max(dot(dir, viewDir), 0.0), 3.0);
+            litColor = mix(litColor, vec3(0.13, 0.28, 0.48), horizon * 0.12 * day);
+
+            // Ocean response remains intentionally simple for now, but the direct
+            // specular highlight is driven by the same star color/intensity.
             vec3 halfDir = normalize(sun + viewDir);
+
+            // Small, filtered wave highlights provide scale without more noise octaves.
+            float phase = dot(dir, vec3(1730.0, 910.0, 1310.0));
+            float ripple = sin(phase) * sin(phase * 0.73 + dir.y * 270.0);
+            ripple *= 1.0 - smoothstep(0.5, 2.0, fwidth(phase));
+            litColor += sunColor * (0.004 * sunIntensity) * ripple * (1.0 - landMask) * day;
 
             float oceanSpec = pow(max(dot(normal, halfDir), 0.0), 96.0);
             oceanSpec *= (1.0 - landMask);
             oceanSpec *= day;
 
             float oceanFresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 4.0);
-            oceanFresnel *= (1.0 - landMask) * day;
+            oceanFresnel *= (1.0 - landMask);
 
-            litColor += vec3(0.50, 0.68, 0.90) * oceanSpec * 0.55;
-            litColor += vec3(0.05, 0.13, 0.24) * oceanFresnel * 0.20;
+            litColor += sunColor * oceanSpec * (0.55 * sunIntensity);
+            litColor += vec3(0.05, 0.13, 0.24) * oceanFresnel * 0.16;
 
             finalColor = vec4(clamp(litColor, 0.0, 1.0), 1.0);
         }
         )";
 
-            shader = LoadShaderFromMemory(vertexShader, fragmentShader);
+            shader = LoadShaderFromMemory(vertexShader, WithWeatherField(fragmentShader).c_str());
             loaded = true;
 
             return shader;
         }
+        static Shader& GetRockSurfaceShader()
+        {
+            static Shader shader{};
+            if (shader.id != 0) return shader;
+            const char* vertexShader = R"(
+                #version 330
+                in vec3 vertexPosition;
+                in vec4 vertexColor;
+                uniform mat4 mvp;
+                out vec3 surfacePosition;
+                out vec4 surfaceColor;
+                void main() {
+                    surfacePosition = vertexPosition * 2048.0;
+                    surfaceColor = vertexColor;
+                    gl_Position = mvp * vec4(vertexPosition, 1.0);
+                }
+            )";
+            const char* fragmentShader = R"(
+                #version 330
+                in vec3 surfacePosition;
+                in vec4 surfaceColor;
+                out vec4 finalColor;
+                float hash(vec3 p) {
+                    p = fract(p * 0.1031);
+                    p += dot(p, p.yzx + 33.33);
+                    return fract((p.x + p.y) * p.z);
+                }
+                float noise(vec3 p) {
+                    vec3 i = floor(p), f = fract(p);
+                    f = f*f*(3.0 - 2.0*f);
+                    return mix(mix(mix(hash(i), hash(i+vec3(1,0,0)), f.x),
+                                   mix(hash(i+vec3(0,1,0)), hash(i+vec3(1,1,0)), f.x), f.y),
+                               mix(mix(hash(i+vec3(0,0,1)), hash(i+vec3(1,0,1)), f.x),
+                                   mix(hash(i+vec3(0,1,1)), hash(i+vec3(1,1,1)), f.x), f.y), f.z);
+                }
+                void main() {
+                    // Object-space detail stays fixed to the ground during flight.
+                    // Fade frequencies below a pixel to avoid distant shimmer.
+                    float footprint = max(length(dFdx(surfacePosition)), length(dFdy(surfacePosition)));
+                    float broad = noise(surfacePosition * 0.12);
+                    float rock = mix(noise(surfacePosition * 0.8), 0.5,
+                        smoothstep(0.4, 1.5, footprint * 0.8));
+                    float grain = mix(noise(surfacePosition * 4.0), 0.5,
+                        smoothstep(0.4, 1.5, footprint * 4.0));
+                    float veins = smoothstep(0.02, 0.16, abs(rock - 0.5));
+                    float texture = 0.72 + broad * 0.48 + rock * 0.26 + grain * 0.12;
+                    texture *= mix(0.78, 1.0, veins);
+                    vec3 mineral = mix(vec3(0.88, 0.94, 1.04), vec3(1.10, 1.02, 0.88), broad);
+                    finalColor = vec4(clamp(surfaceColor.rgb * mineral * texture, 0.0, 1.0), 1.0);
+                }
+            )";
+            shader = LoadShaderFromMemory(vertexShader, fragmentShader);
+            return shader;
+        }
+
         static void ApplyPlanetSurfaceShader(
             const GlobalObject& object,
-            Model& model
+            Model& model,
+            float radius,
+            Vector3 position,
+            Vector3 cameraPosition,
+            const SceneLighting& lighting
         )
         {
-            // Only Ocean World uses the new shader for now.
-            // Other planet types should keep their original/default material shader.
             if (!object.hasPlanetData ||
                 object.planetData.planetClass != PlanetClass::OceanWorld)
             {
+                if (object.hasPlanetData &&
+                    object.planetData.planetClass != PlanetClass::GasGiant &&
+                    object.planetData.planetClass != PlanetClass::IceGiant)
+                {
+                    model.materials[0].shader = GetRockSurfaceShader();
+                }
                 return;
             }
 
+            model.materials[0].shader = DistantBodyRenderer::oceanSurfaceShader(
+                object, lighting, position, radius, cameraPosition);
+        }
+
+        static Shader ConfigureOceanSurface(const GlobalObject& object,
+            const SceneLighting& lighting,
+            Vector3 position, float radius, Vector3 cameraPosition,
+            int lightingDebugMode = 2)
+        {
             Shader& oceanShader = GetOceanPlanetShader();
 
             // Safety: if the shader failed to compile/load, keep the default material.
             if (oceanShader.id == 0 || oceanShader.locs == nullptr)
             {
-                return;
+                return oceanShader;
             }
 
-            model.materials[0].shader = oceanShader;
+            const int seed = object.planetData.seed == 0
+                ? PlanetSurfaceSampler::seedFromId(object.id)
+                : static_cast<int>(object.planetData.seed);
+            float planetSeed = static_cast<float>((seed % 10000 + 10000) % 10000) * 0.017f;
+            SetShaderValue(oceanShader, GetShaderLocation(oceanShader, "planetRadius"), &radius, SHADER_UNIFORM_FLOAT);
+            const float terrainUnits = PlanetSurfaceSampler::TerrainUnitsPerRadius;
+            SetShaderValue(oceanShader, GetShaderLocation(oceanShader, "terrainUnitsPerRadius"),
+                &terrainUnits, SHADER_UNIFORM_FLOAT);
+            const float relativeAltitude = Vector3Distance(cameraPosition, position) / std::max(radius, 1.0f) - 1.0f;
+            float groundDetail = Clamp((0.22f - relativeAltitude) / 0.18f, 0.0f, 1.0f);
+            groundDetail = groundDetail * groundDetail * (3.0f - 2.0f * groundDetail);
+            SetShaderValue(oceanShader, GetShaderLocation(oceanShader, "groundDetail"), &groundDetail, SHADER_UNIFORM_FLOAT);
+            // Sky and orbital planets use comparable render distances. Avoid
+            // expensive vertex noise for small bodies and fade it in on approach.
+            float bumpDetail = Clamp((radius - 80.0f) / 100.0f, 0.0f, 1.0f);
+            Vector3 sunDirection = GetLightDirectionAt(lighting, object.position);
 
-            float planetSeed = static_cast<float>(object.planetData.seed % 10000u) * 0.017f;
-            Vector3 sunDirection = Vector3Normalize(Vector3{ -0.55f, 0.22f, -0.80f });
+            SetShaderValue(oceanShader, GetShaderLocation(oceanShader, "bumpDetail"),
+                &bumpDetail, SHADER_UNIFORM_FLOAT);
+            SetShaderValue(oceanShader, GetShaderLocation(oceanShader, "planetCenter"),
+                &position, SHADER_UNIFORM_VEC3);
+            SetShaderValue(oceanShader, GetShaderLocation(oceanShader, "cameraPosition"),
+                &cameraPosition, SHADER_UNIFORM_VEC3);
 
             SetShaderValue(
                 oceanShader,
@@ -417,6 +576,38 @@ namespace SpaceSim
                 &sunDirection,
                 SHADER_UNIFORM_VEC3
             );
+
+            SetShaderValue(
+                oceanShader,
+                GetShaderLocation(oceanShader, "sunColor"),
+                &lighting.starColor,
+                SHADER_UNIFORM_VEC3
+            );
+            SetShaderValue(
+                oceanShader,
+                GetShaderLocation(oceanShader, "sunIntensity"),
+                &lighting.starIntensity,
+                SHADER_UNIFORM_FLOAT
+            );
+            SetShaderValue(
+                oceanShader,
+                GetShaderLocation(oceanShader, "ambientColor"),
+                &lighting.ambientColor,
+                SHADER_UNIFORM_VEC3
+            );
+            SetShaderValue(
+                oceanShader,
+                GetShaderLocation(oceanShader, "ambientIntensity"),
+                &lighting.ambientIntensity,
+                SHADER_UNIFORM_FLOAT
+            );
+            SetShaderValue(
+                oceanShader,
+                GetShaderLocation(oceanShader, "lightingDebugMode"),
+                &lightingDebugMode,
+                SHADER_UNIFORM_INT
+            );
+            return oceanShader;
         }
         static Shader& GetCloudShader()
         {
@@ -463,9 +654,11 @@ namespace SpaceSim
 
         float hash(vec3 p)
         {
-            p = fract(p * 0.3183099 + vec3(0.11, 0.17, 0.13));
-            p *= 17.0;
-            return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+            uvec3 q = uvec3(ivec3(p));
+            uint h = q.x * 374761393u ^ q.y * 668265263u ^ q.z * 2246822519u;
+            h = (h ^ (h >> 13u)) * 1274126177u;
+            h ^= h >> 16u;
+            return float(h & 0x00ffffffu) / 16777215.0;
         }
 
         float noise(vec3 p)
@@ -496,64 +689,32 @@ namespace SpaceSim
             return mix(nxy0, nxy1, f.z);
         }
 
-        float fbm(vec3 p)
-        {
-            float total = 0.0;
-            float amp = 0.5;
-
-            for (int i = 0; i < 5; ++i)
-            {
-                total += noise(p) * amp;
-                p *= 2.05;
-                amp *= 0.5;
-            }
-
-            return total;
-        }
-
+        /* WEATHER_FIELD */
         void main()
         {
             vec3 dir = normalize(fragDir);
 
-            // Slightly bend the sampling coordinates by latitude so the clouds
-            // look more like stretched atmospheric systems instead of random blobs.
-            vec3 p = dir;
-            p.x += sin(dir.y * 7.0 + cloudSeed) * 0.18;
-            p.z += cos(dir.y * 6.0 + cloudSeed * 0.7) * 0.18;
-
-            float broad = fbm(p * 2.35 + cloudSeed);
-            float medium = fbm(p * 7.50 + cloudSeed * 1.71);
-            float fine = fbm(p * 22.0 + cloudSeed * 2.37);
-
-            float cloud = broad * 0.58 + medium * 0.32 + fine * 0.10;
-
-            // Patch coverage. Raise these numbers for fewer clouds.
-            float mask = smoothstep(0.52, 0.74, cloud);
-
-            // Break up the edges so they are not solid white blobs.
-            float breakup = smoothstep(0.32, 0.72, medium + fine * 0.35);
-            mask *= breakup;
-
-            // Light clouds by the same fake sun direction used by the planet.
+            float mask = cloudDensity(dir, cloudSeed);
+            // Light clouds using the authoritative scene-star direction.
             float day = smoothstep(-0.15, 0.35, dot(dir, normalize(sunDir)));
 
             // Clouds should be much dimmer on the night side.
-            float alpha = mask * mix(0.03, 0.52, day);
+            float alpha = (1.0 - exp(-mask * 3.0)) * mix(0.18, 0.90, day);
 
             if (alpha < 0.006)
             {
                 discard;
             }
             // Slightly brighter on day side, bluish-gray on night side.
-            vec3 nightColor = vec3(0.38, 0.46, 0.56);
+            vec3 nightColor = vec3(0.06, 0.09, 0.14);
             vec3 dayColor = vec3(0.92, 0.96, 1.0);
-            vec3 color = mix(nightColor, dayColor, day);
+            vec3 color = mix(nightColor, dayColor, day) * mix(0.78, 1.0, mask);
 
             finalColor = vec4(color, alpha);
         }
         )";
 
-            shader = LoadShaderFromMemory(vertexShader, fragmentShader);
+            shader = LoadShaderFromMemory(vertexShader, WithWeatherField(fragmentShader).c_str());
             loaded = true;
 
             return shader;
@@ -562,7 +723,9 @@ namespace SpaceSim
             const GlobalObject& object,
             const PlanetVisual& visual,
             Vector3 position,
-            float radius
+            float radius,
+            Vector3 cameraPosition,
+            const SceneLighting& lighting
         )
         {
             if (!ShouldDrawAtmosphere(object, visual))
@@ -587,9 +750,12 @@ namespace SpaceSim
                 atmosphereColor = Vector3{ 0.25f, 0.55f, 1.0f };
             }
 
-            Vector3 sunDirection = Vector3Normalize(Vector3{ -0.55f, 0.22f, -0.80f });
+            Vector3 sunDirection = GetLightDirectionAt(lighting, object.position);
 
             float strength = Clamp(visual.atmosphereStrength * 0.55f, 0.08f, 0.55f);
+            strength = Clamp(visual.atmosphereStrength, 0.0f, 1.0f);
+            SetShaderValue(atmosphereShader, GetShaderLocation(atmosphereShader, "cameraPosition"), &cameraPosition, SHADER_UNIFORM_VEC3);
+            SetShaderValue(atmosphereShader, GetShaderLocation(atmosphereShader, "planetRadius"), &radius, SHADER_UNIFORM_FLOAT);
 
             SetShaderValue(
                 atmosphereShader,
@@ -619,7 +785,7 @@ namespace SpaceSim
                 SHADER_UNIFORM_FLOAT
             );
 
-            BeginBlendMode(BLEND_ADDITIVE);
+            BeginBlendMode(BLEND_ALPHA);
 
             // Atmosphere should depth-test against the planet but not write depth.
             rlDisableDepthMask();
@@ -669,7 +835,8 @@ namespace SpaceSim
             const GlobalObject& object,
             Vector3 position,
             float radius,
-            float tilt
+            float tilt,
+            const SceneLighting& lighting
         )
         {
             if (!ShouldDrawClouds(object))
@@ -683,7 +850,7 @@ namespace SpaceSim
             cloudModel.materials[0].shader = cloudShader;
 
             float cloudSeed = static_cast<float>(object.planetData.seed % 10000u) * 0.017f;
-            Vector3 sunDirection = Vector3Normalize(Vector3{ -0.55f, 0.22f, -0.80f });
+            Vector3 sunDirection = GetLightDirectionAt(lighting, object.position);
 
             SetShaderValue(
                 cloudShader,
@@ -735,7 +902,8 @@ namespace SpaceSim
             const GlobalObject& object,
             Vector3 position,
             float radius,
-            float tilt
+            float tilt,
+            const SceneLighting& lighting
         )
         {
             if (!ShouldDrawOceanSpecular(object))
@@ -743,8 +911,8 @@ namespace SpaceSim
                 return;
             }
 
-            // Temporary fake sun direction. Keep this matching the planet/cloud lighting.
-            Vector3 sunDirection = Vector3Normalize(Vector3{ -0.55f, 0.22f, -0.80f });
+            // Use the same scene-star direction as the planet and cloud shaders.
+            Vector3 sunDirection = GetLightDirectionAt(lighting, object.position);
 
             // Approximate view direction from sky body toward camera at origin.
             Vector3 viewDirection = Vector3Normalize(Vector3Negate(position));
@@ -800,14 +968,17 @@ namespace SpaceSim
             const GlobalObject& object,
             const PlanetVisual& visual,
             Vector3 position,
-            float radius
+            float radius,
+            const SceneLighting& lighting,
+            Vector3 cameraPosition = {}
         )
         {
             Model& model = GetGeneratedPlanetModel(object);
 
-            ApplyPlanetSurfaceShader(object, model);
+            ApplyPlanetSurfaceShader(object, model, radius, position, cameraPosition, lighting);
 
-            const float tilt = 20.0f + static_cast<float>(object.planetData.seed % 20u);
+            const float tilt = object.planetData.planetClass == PlanetClass::OceanWorld
+                ? 0.0f : 20.0f + static_cast<float>(object.planetData.seed % 20u);
 
             DrawModelEx(
                 model,
@@ -818,9 +989,9 @@ namespace SpaceSim
                 WHITE
             );
 
-            //DrawOceanSpecular(object, position, radius, tilt);
-            DrawCloudLayer(object, position, radius, tilt);
-            DrawAtmosphereShell(object, visual, position, radius);
+            //DrawOceanSpecular(object, position, radius, tilt, lighting);
+            DrawCloudLayer(object, position, radius, tilt, lighting);
+            DrawAtmosphereShell(object, visual, position, radius, cameraPosition, lighting);
         }
         static Vector3 ToRenderDirection(DVec3 relative)
         {
@@ -873,8 +1044,19 @@ namespace SpaceSim
 
             std::vector<SkyBodyDrawCommand> drawCommands;
 
-            for (const GlobalObject& object : world.starSystem.objects)
+            for (int objectIndex = 0; objectIndex < static_cast<int>(world.starSystem.objects.size()); ++objectIndex)
             {
+                const GlobalObject& object = world.starSystem.objects[objectIndex];
+
+                const bool isActiveLocalPlanet =
+                    objectIndex == world.planetTransition.closestPlanetIndex &&
+                    world.planetTransition.mode != PlanetRenderMode::Distant;
+
+                if (isActiveLocalPlanet)
+                {
+                    continue;
+                }
+
                 if (!IsCelestialBody(object.type))
                 {
                     continue;
@@ -930,7 +1112,7 @@ namespace SpaceSim
             {
                 if (command.type == GlobalObjectType::Planet && command.object != nullptr)
                 {
-                    DrawTerrainPlanet(*command.object, command.visual, command.position, command.radius);
+                    DrawTerrainPlanet(*command.object, command.visual, command.position, command.radius, world.lighting);
                 }
             }
         }
@@ -939,5 +1121,49 @@ namespace SpaceSim
     void DistantBodyRenderer::render(const GameWorld& world)
     {
         DrawDistantStarSystem3D(world);
+    }
+
+    Shader DistantBodyRenderer::oceanSurfaceShader(const GlobalObject& object,
+        const SceneLighting& lighting,
+        Vector3 center, float radius, Vector3 cameraPosition,
+        int lightingDebugMode)
+    {
+        return ConfigureOceanSurface(object, lighting, center, radius, cameraPosition,
+            lightingDebugMode);
+    }
+
+    void DistantBodyRenderer::renderLocalPlanet(
+        const GlobalObject& object,
+        const SceneLighting& lighting,
+        Vector3 position,
+        float radius,
+        float atmosphereMultiplier,
+        Vector3 cameraPosition, bool drawSurface, bool drawLayers)
+    {
+        PlanetVisual visual = GeneratePlanetVisual(object);
+
+        visual.atmosphereStrength *= atmosphereMultiplier;
+
+        if (object.type == GlobalObjectType::Sun)
+        {
+            DrawSphere(position, radius, visual.baseColor);
+            return;
+        }
+
+        if (drawSurface && drawLayers) {
+            DrawTerrainPlanet(object, visual, position, radius, lighting, cameraPosition);
+        } else {
+            if (drawSurface) {
+                Model& model = GetGeneratedPlanetModel(object);
+                ApplyPlanetSurfaceShader(object, model, radius, position, cameraPosition, lighting);
+                const float tilt = object.planetData.planetClass == PlanetClass::OceanWorld
+                    ? 0.0f : 20.0f + static_cast<float>(object.planetData.seed % 20u);
+                DrawModelEx(model, position, {1,0,0}, tilt, {radius,radius,radius}, WHITE);
+            }
+            if (drawLayers) {
+                DrawCloudLayer(object, position, radius, 0.0f, lighting);
+                DrawAtmosphereShell(object, visual, position, radius, cameraPosition, lighting);
+            }
+        }
     }
 }

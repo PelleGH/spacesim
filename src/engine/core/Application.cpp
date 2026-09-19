@@ -10,6 +10,8 @@
 #include <raylib.h>
 #include <raymath.h>
 
+#include <filesystem>
+
 namespace SpaceSim
 {
     int FindObjectIndexById(const StarSystem& system, const std::string& id)
@@ -56,7 +58,15 @@ namespace SpaceSim
     {
         m_renderer = std::make_unique<Renderer>(1280, 720, "SpaceSim");
 
-        m_world.starSystem = LoadStarSystemFromJson("data/systems/test_system.json");
+        // Explorer, shortcuts and IDEs can all use different working directories.
+        // Prefer the data packaged beside the executable; retain the project-root
+        // fallback for development builds made before data copying was enabled.
+        const auto packagedSystem = std::filesystem::path(GetApplicationDirectory()) /
+            "data" / "systems" / "test_system.json";
+        m_world.starSystem = LoadStarSystemFromJson(
+            std::filesystem::exists(packagedSystem)
+                ? packagedSystem.string()
+                : "data/systems/test_system.json");
 
         // Pick a valid starting relay. The old prototype used "aster_relay", but
         // the planet test system now has planet-type relays instead. Never index
@@ -138,6 +148,7 @@ namespace SpaceSim
                 ToggleFullscreen();
             }
         }
+
         m_ftlSystem.update(m_world, dt);
 
         if (m_world.travelMode == TravelMode::NormalFlight)
@@ -145,15 +156,17 @@ namespace SpaceSim
             m_shipControlSystem.update(m_world, dt);
         }
 
-        const auto& transform = m_world.registry.get<TransformComponent>(m_world.playerShip);
+        m_playerGlobalPositionSystem.update(m_world);
+        m_planetProximitySystem.update(m_world);
 
-        if (m_world.travelMode == TravelMode::NormalFlight)
-        {
-            m_world.globalPlayerPosition = LocalToGlobalPosition(m_world, transform.position);
-        }
+        m_orbitalCruiseSystem.update(m_world, dt);
+
+        m_playerGlobalPositionSystem.update(m_world);
+        m_planetProximitySystem.update(m_world);
+        m_atmosphereSystem.update(m_world);
 
         m_bubbleSystem.update(m_world);
-
+        m_lightingSystem.update(m_world);
         m_cameraSystem.update(m_world, dt);
     }
 
@@ -166,6 +179,8 @@ namespace SpaceSim
         m_renderer->begin3D(m_world.camera);
         m_renderSystem.renderWorld(m_world, *m_renderer);
         m_renderer->end3D();
+
+        m_renderSystem.renderAtmosphereOverlay(m_world, *m_renderer);
         const int screenWidth = GetScreenWidth();
         const int screenHeight = GetScreenHeight();
 
@@ -318,6 +333,83 @@ namespace SpaceSim
                 220,
                 20,
                 SKYBLUE
+            );
+        }
+
+        if (m_world.planetTransition.closestPlanetIndex >= 0)
+        {
+            const GlobalObject& closestPlanet =
+                m_world.starSystem.objects[m_world.planetTransition.closestPlanetIndex];
+
+            const char* modeName = "Distant";
+
+            switch (m_world.planetTransition.mode)
+            {
+            case PlanetRenderMode::Distant:
+                modeName = "Distant";
+                break;
+            case PlanetRenderMode::Orbital:
+                modeName = "Orbital";
+                break;
+            case PlanetRenderMode::Surface:
+                modeName = "Surface";
+                break;
+            }
+
+            DrawText(
+                TextFormat("Closest planet: %s", closestPlanet.name.c_str()),
+                20,
+                320,
+                20,
+                RAYWHITE
+            );
+
+            DrawText(
+                TextFormat("Planet altitude: %.1f", m_world.planetTransition.altitude),
+                20,
+                345,
+                20,
+                RAYWHITE
+            );
+
+            DrawText(
+                TextFormat("Planet mode: %s", modeName),
+                20,
+                370,
+                20,
+                m_world.planetTransition.mode == PlanetRenderMode::Surface ? GREEN : RAYWHITE
+            );
+
+            DrawText(
+                TextFormat(
+                    "Orbital cruise: %s  [Hold Left Shift]",
+                    m_world.orbitalCruise.active ? "ACTIVE" : "READY"),
+                20,
+                395,
+                20,
+                m_world.orbitalCruise.active ? GREEN : RAYWHITE
+            );
+
+            DrawText(
+                TextFormat(
+                    "Cruise speed: %.0f / %.0f",
+                    m_world.orbitalCruise.currentSpeed,
+                    m_world.orbitalCruise.maximumSpeed),
+                20,
+                420,
+                20,
+                RAYWHITE
+            );
+
+            DrawText(
+                TextFormat(
+                    "Atmosphere: %s  Density: %.2f",
+                    m_world.atmosphere.insideAtmosphere ? "INSIDE" : "OUTSIDE",
+                    m_world.atmosphere.density),
+                20,
+                445,
+                20,
+                m_world.atmosphere.insideAtmosphere ? SKYBLUE : RAYWHITE
             );
         }
 

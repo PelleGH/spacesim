@@ -8,6 +8,11 @@
 #include "systems/FTLSystem.h"
 #include "systems/StarSystemSystem.h"
 #include "systems/BubbleSystem.h"
+#include "systems/PlayerGlobalPositionSystem.h"
+#include "systems/PlanetProximitySystem.h"
+#include "systems/OrbitalCruiseSystem.h"
+#include "systems/AtmosphereSystem.h"
+#include "systems/LightingSystem.h"
 
 #include <memory>
 
@@ -41,6 +46,11 @@ namespace SpaceSim
         FTLSystem m_ftlSystem;
         StarSystemSystem m_starSystemSystem;
         BubbleSystem m_bubbleSystem;
+        PlayerGlobalPositionSystem m_playerGlobalPositionSystem;
+        PlanetProximitySystem m_planetProximitySystem;
+        OrbitalCruiseSystem m_orbitalCruiseSystem;
+        AtmosphereSystem m_atmosphereSystem;
+        LightingSystem m_lightingSystem;
         bool m_mouseCaptured = true;
     };
 }

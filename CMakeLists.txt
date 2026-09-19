@@ -6,9 +6,37 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(raylib CONFIG REQUIRED)
-find_package(EnTT CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+include(FetchContent)
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    raylib
+    GIT_REPOSITORY https://github.com/raysan5/raylib.git
+    GIT_TAG 5.5
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_Declare(
+    EnTT
+    GIT_REPOSITORY https://github.com/skypjack/entt.git
+    GIT_TAG v3.15.0
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.12.0
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(
+    raylib
+    EnTT
+    nlohmann_json
+)
 
 add_executable(SpaceSim
     src/main.cpp
@@ -20,6 +48,7 @@ add_executable(SpaceSim
     src/engine/renderer/Renderer.h
 
     src/game/world/GameWorld.h
+    src/game/lighting/SceneLighting.h
 
     src/game/components/TransformComponent.h
     src/game/components/ShipFlightComponent.h
@@ -44,10 +73,24 @@ add_executable(SpaceSim
     src/game/systems/FTLSystem.cpp
     src/game/systems/FTLSystem.h
 
+    src/game/systems/PlayerGlobalPositionSystem.cpp
+    src/game/systems/PlayerGlobalPositionSystem.h
+    src/game/systems/PlanetProximitySystem.cpp
+    src/game/systems/PlanetProximitySystem.h
+    src/game/systems/OrbitalCruiseSystem.cpp
+    src/game/systems/OrbitalCruiseSystem.h
+    src/game/systems/AtmosphereSystem.cpp
+    src/game/systems/AtmosphereSystem.h
+    src/game/systems/LightingSystem.cpp
+    src/game/systems/LightingSystem.h
+
     src/game/world/StarSystemLoader.cpp
     src/game/world/StarSystemLoader.h
     src/game/world/PlanetVisualGenerator.cpp
     src/game/world/PlanetTerrainGenerator.cpp
+
+    src/game/planet/PlanetSurfaceSampler.cpp
+    src/game/planet/PlanetSurfaceSampler.h
     
 
     src/game/rendering/SpaceBackgroundRenderer.cpp
@@ -55,6 +98,8 @@ add_executable(SpaceSim
     src/game/rendering/PrototypeMeshRenderer.cpp
     src/game/rendering/PlanetMeshGenerator.cpp
     src/game/rendering/PlanetCloudGenerator.cpp
+    src/game/rendering/PlanetSurfacePatch.cpp
+    src/game/rendering/PlanetSurfacePatch.h
 )
 
 target_include_directories(SpaceSim PRIVATE
@@ -68,3 +113,48 @@ target_link_libraries(SpaceSim PRIVATE
     EnTT::EnTT
     nlohmann_json::nlohmann_json
 )
+
+# Make each build runnable directly from Explorer, like the installed package.
+add_custom_command(TARGET SpaceSim POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/data"
+        "$<TARGET_FILE_DIR:SpaceSim>/data"
+    COMMENT "Copying game data beside SpaceSim"
+)
+
+# Keep the Windows build portable.
+if(WIN32 AND CMAKE_CROSSCOMPILING)
+    target_link_options(SpaceSim PRIVATE -static)
+endif()
+
+# Package executable + game data.
+install(TARGETS SpaceSim
+    RUNTIME DESTINATION .
+    COMPONENT SpaceSimRuntime
+)
+
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/data"
+    DESTINATION .
+    COMPONENT SpaceSimRuntime
+)
+
+# Explicit diagnostic target: does not add work to ordinary game builds.
+add_executable(OceanSurfaceCheck EXCLUDE_FROM_ALL
+    tests/OceanSurfaceCheck.cpp
+    src/game/world/StarSystemLoader.cpp
+    src/game/world/PlanetVisualGenerator.cpp
+    src/game/world/PlanetTerrainGenerator.cpp
+    src/game/planet/PlanetSurfaceSampler.cpp
+    src/game/rendering/DistantBodyRenderer.cpp
+    src/game/rendering/PlanetMeshGenerator.cpp
+    src/game/rendering/PlanetCloudGenerator.cpp
+    src/game/rendering/PlanetSurfacePatch.cpp
+)
+target_include_directories(OceanSurfaceCheck PRIVATE src src/engine src/game)
+target_link_libraries(OceanSurfaceCheck PRIVATE raylib EnTT::EnTT nlohmann_json::nlohmann_json)
+
+foreach(planet_target SpaceSim OceanSurfaceCheck)
+    target_sources(${planet_target} PRIVATE
+        src/game/planet/PlanetTile.cpp
+        src/game/rendering/AdaptivePlanetRenderer.cpp)
+endforeach()

@@ -1,11 +1,15 @@
 #include "renderer/Renderer.h"
 
+#include <rlgl.h>
+
 namespace SpaceSim
 {
     Renderer::Renderer(int width, int height, const char* title)
         : m_width(width), m_height(height)
     {
+        SetConfigFlags(FLAG_MSAA_4X_HINT);
         InitWindow(m_width, m_height, title);
+        rlSetClipPlanes(0.05, 5000.0);
         SetTargetFPS(60);
     }
 

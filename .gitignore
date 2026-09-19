@@ -76,3 +76,12 @@ recordings/
 .env
 .env.*
 local_config.json
+# SpaceSim server cross-build/package output
+/build-win/
+/dist/
+/releases/
+
+PLANET_REBUILD_HANDOFF.md
+RENDERING_CHANGES.md
+SERVER_BUILD.md
+AGENTS.md

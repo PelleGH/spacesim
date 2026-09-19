@@ -1,4 +1,5 @@
 #include "world/PlanetTerrainGenerator.h"
+#include "planet/PlanetSurfaceSampler.h"
 
 #include <raymath.h>
 
@@ -424,8 +425,6 @@ namespace SpaceSim
         Vector3 unitDirection
     )
     {
-        unitDirection = Vector3Normalize(unitDirection);
-
         PlanetTerrainSample sample{};
 
         if (!object.hasPlanetData)
@@ -435,6 +434,18 @@ namespace SpaceSim
             return sample;
         }
 
+        if (object.planetData.planetClass == PlanetClass::OceanWorld)
+        {
+            const int seed = object.planetData.seed == 0
+                ? PlanetSurfaceSampler::seedFromId(object.id)
+                : static_cast<int>(object.planetData.seed);
+            const auto surface = PlanetSurfaceSampler::sample(unitDirection, seed, PlanetClass::OceanWorld);
+            sample.height = surface.terrainHeight / PlanetSurfaceSampler::TerrainUnitsPerRadius;
+            sample.color = surface.color;
+            return sample;
+        }
+
+        unitDirection = Vector3Normalize(unitDirection);
         sample.height = CalculateHeight(object.planetData, unitDirection);
         sample.color = CalculateSurfaceColor(object, unitDirection, sample.height);
 
@@ -494,6 +505,9 @@ namespace SpaceSim
         Vector3 dTangent = Vector3Subtract(pointA, pointB);
         Vector3 dBitangent = Vector3Subtract(pointC, pointD);
 
-        return Vector3Normalize(Vector3CrossProduct(dBitangent, dTangent));
+        Vector3 normal = Vector3Normalize(Vector3CrossProduct(dBitangent, dTangent));
+        if (Vector3DotProduct(normal, unitDirection) < 0.0f)
+            normal = Vector3Negate(normal);
+        return normal;
     }
 }
