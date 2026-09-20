@@ -2,14 +2,23 @@
 
 This project uses third-party open-source software. Each dependency remains under its own license.
 
-## raylib
+## SDL3
 
-- License: zlib/libpng license
-- Used for: windowing, rendering, input, math helpers, and drawing utilities
-- Website: https://www.raylib.com/
-- Repository: https://github.com/raysan5/raylib
+- License: zlib License
+- Used for: window creation, events, input, and OpenGL context management
+- Repository: https://github.com/libsdl-org/SDL
 
-raylib is Copyright (c) Ramon Santamaria (@raysan5) and contributors.
+## glad
+
+- License: MIT License (generated loader components may include additional permissive notices)
+- Used for: OpenGL function loading
+- Repository: https://github.com/Dav1dde/glad
+
+## GLM
+
+- License: Happy Bunny License / MIT-compatible terms
+- Used for: vectors, matrices, quaternions, and transforms
+- Repository: https://github.com/g-truc/glm
 
 ## EnTT
 
@@ -25,3 +34,7 @@ EnTT is Copyright (c) Michele Caini and contributors.
 - Used for: build configuration
 - Website: https://cmake.org/
 - Repository: https://github.com/Kitware/CMake
+
+## Legacy source note
+
+Older Raylib-based source remains in the repository as migration/reference material but is not part of the normal build after the runtime refactor.

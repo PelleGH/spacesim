@@ -18,8 +18,8 @@
 #include "renderer/planet/PlanetRenderObject.h"
 
 #include "renderlab/BoxGenerator.h"
-#include "renderlab/SphereGenerator.h"
-#include "renderlab/TestEnvironment.h"
+#include "geometry/SphereGenerator.h"
+#include "renderer/TestEnvironment.h"
 
 #include <SDL3/SDL.h>
 

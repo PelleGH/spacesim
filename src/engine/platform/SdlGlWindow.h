@@ -23,6 +23,7 @@ namespace SpaceSim
 
         void captureMouse(bool capture);
         void toggleFullscreen();
+        void setTitle(const char* title);
         int pixelWidth() const;
         int pixelHeight() const;
 

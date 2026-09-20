@@ -1,9 +1,5 @@
 #pragma once
 
-#include "renderer/opengl/GlTextureCube.h"
-
-namespace SpaceSim
-{
-    void fillTestEnvironment(
-        GlTextureCube& texture);
-}
+// Compatibility include for old experimental sources. The helper now lives in
+// the shared renderer layer.
+#include "renderer/TestEnvironment.h"
