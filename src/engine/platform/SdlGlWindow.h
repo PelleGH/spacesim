@@ -21,6 +21,8 @@ namespace SpaceSim
 
         void swapBuffers();
 
+        void captureMouse(bool capture);
+        void toggleFullscreen();
         int pixelWidth() const;
         int pixelHeight() const;
 

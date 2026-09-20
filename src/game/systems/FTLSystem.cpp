@@ -1,3 +1,4 @@
+#include "input/GameInput.h"
 #include "systems/FTLSystem.h"
 
 #include "components/ShipFlightComponent.h"
@@ -59,12 +60,12 @@ namespace SpaceSim
     {
         if (world.travelMode == TravelMode::NormalFlight)
         {
-            if (IsKeyPressed(KEY_TAB))
+            if (GameInput::keyPressed(KEY_TAB))
             {
                 selectNextJumpTarget(world);
             }
 
-            if (IsKeyPressed(KEY_J))
+            if (GameInput::keyPressed(KEY_J))
             {
                 beginFTLTravel(world);
             }
@@ -74,7 +75,7 @@ namespace SpaceSim
 
         if (world.travelMode == TravelMode::FTLTravel)
         {
-            if (IsKeyPressed(KEY_C))
+            if (GameInput::keyPressed(KEY_C))
             {
                 cancelFTLTravel(world);
                 return;

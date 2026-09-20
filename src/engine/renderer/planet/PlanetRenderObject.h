@@ -23,7 +23,7 @@ namespace SpaceSim
 
 
         PlanetMaterial material;
-
+        bool useAdaptiveTerrain = false;
         // Explicit ocean eligibility and physical scale, independent of atmosphere.
         bool hasOcean = false;
         float radiusKm = 0.0f;

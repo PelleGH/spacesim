@@ -1,3 +1,4 @@
+#include "input/GameInput.h"
 #include "systems/CameraSystem.h"
 
 #include "components/TransformComponent.h"
@@ -18,11 +19,11 @@ namespace SpaceSim
         auto& transform = world.registry.get<TransformComponent>(world.playerShip);
 
         const bool allowFreeLook = world.travelMode == TravelMode::FTLTravel;
-        const bool freeLookHeld = allowFreeLook && IsKeyDown(KEY_LEFT_ALT);
+        const bool freeLookHeld = allowFreeLook && GameInput::keyDown(KEY_LEFT_ALT);
 
         if (freeLookHeld)
         {
-            Vector2 mouseDelta = GetMouseDelta();
+            Vector2 mouseDelta = GameInput::mouseDelta();
 
             m_freeLook.x -= mouseDelta.x * m_freeLookSensitivity;
             m_freeLook.y -= mouseDelta.y * m_freeLookSensitivity;

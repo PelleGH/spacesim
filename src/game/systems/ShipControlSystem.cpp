@@ -1,3 +1,4 @@
+#include "input/GameInput.h"
 #include "systems/ShipControlSystem.h"
 
 #include "components/PlayerControlledComponent.h"
@@ -77,35 +78,35 @@ void ShipControlSystem::update(GameWorld& world, float dt)
     {
         auto& transform = view.get<TransformComponent>(entity);
         auto& flight = view.get<ShipFlightComponent>(entity);
-        if (IsKeyPressed(KEY_ONE))
+        if (GameInput::keyPressed(KEY_ONE))
         {
             ApplyShipPreset(flight, ShipPreset::Light);
         }
 
-        if (IsKeyPressed(KEY_TWO))
+        if (GameInput::keyPressed(KEY_TWO))
         {
             ApplyShipPreset(flight, ShipPreset::Medium);
         }
 
-        if (IsKeyPressed(KEY_THREE))
+        if (GameInput::keyPressed(KEY_THREE))
         {
             ApplyShipPreset(flight, ShipPreset::Heavy);
         }
-        if (IsKeyPressed(KEY_X))
+        if (GameInput::keyPressed(KEY_X))
         {
             flight.flightAssist = !flight.flightAssist;
         }
 
         Vector3 inputMove{ 0.0f, 0.0f, 0.0f };
 
-        if (IsKeyDown(KEY_D)) inputMove.x -= 1.0f;
-        if (IsKeyDown(KEY_A)) inputMove.x += 1.0f;
+        if (GameInput::keyDown(KEY_D)) inputMove.x -= 1.0f;
+        if (GameInput::keyDown(KEY_A)) inputMove.x += 1.0f;
 
-        if (IsKeyDown(KEY_SPACE)) inputMove.y += 1.0f;
-        if (IsKeyDown(KEY_LEFT_CONTROL)) inputMove.y -= 1.0f;
+        if (GameInput::keyDown(KEY_SPACE)) inputMove.y += 1.0f;
+        if (GameInput::keyDown(KEY_LEFT_CONTROL)) inputMove.y -= 1.0f;
 
         // W/S now control throttle, not direct forward thrust.
-        if (IsKeyPressed(KEY_T))
+        if (GameInput::keyPressed(KEY_T))
         {
             flight.holdThrustMode = !flight.holdThrustMode;
             flight.throttle = 0.0f;
@@ -115,19 +116,19 @@ void ShipControlSystem::update(GameWorld& world, float dt)
         // W/S adjust throttle and it stays there.
         if (!flight.holdThrustMode)
         {
-            if (IsKeyDown(KEY_W))
+            if (GameInput::keyDown(KEY_W))
             {
                 flight.throttle += flight.throttleChangeSpeed * dt;
             }
 
-            if (IsKeyDown(KEY_S))
+            if (GameInput::keyDown(KEY_S))
             {
                 flight.throttle -= flight.throttleChangeSpeed * dt;
             }
 
             flight.throttle = Clamp(flight.throttle, -1.0f, 1.0f);
 
-            if (IsKeyPressed(KEY_Z))
+            if (GameInput::keyPressed(KEY_Z))
             {
                 flight.throttle = 0.0f;
             }
@@ -138,12 +139,12 @@ void ShipControlSystem::update(GameWorld& world, float dt)
         {
             flight.throttle = 0.0f;
 
-            if (IsKeyDown(KEY_W))
+            if (GameInput::keyDown(KEY_W))
             {
                 flight.throttle += 1.0f;
             }
 
-            if (IsKeyDown(KEY_S))
+            if (GameInput::keyDown(KEY_S))
             {
                 flight.throttle -= 1.0f;
             }
@@ -189,7 +190,7 @@ void ShipControlSystem::update(GameWorld& world, float dt)
             );
         }
 
-        Vector2 mouseDelta = GetMouseDelta();
+        Vector2 mouseDelta = GameInput::mouseDelta();
 
         m_virtualStick.x += mouseDelta.x * flight.mouseSensitivity;
         m_virtualStick.y += mouseDelta.y * flight.mouseSensitivity;
@@ -203,7 +204,7 @@ void ShipControlSystem::update(GameWorld& world, float dt)
                 m_controlRadius
             );
         }
-        if (IsKeyPressed(KEY_R))
+        if (GameInput::keyPressed(KEY_R))
         {
             m_virtualStick = Vector2{ 0.0f, 0.0f };
         }
@@ -269,8 +270,8 @@ void ShipControlSystem::update(GameWorld& world, float dt)
 
         Vector3 angularAcceleration{ 0.0f, 0.0f, 0.0f };
 
-        if (IsKeyDown(KEY_Q)) angularAcceleration.z -= flight.rollAcceleration;
-        if (IsKeyDown(KEY_E)) angularAcceleration.z += flight.rollAcceleration;
+        if (GameInput::keyDown(KEY_Q)) angularAcceleration.z -= flight.rollAcceleration;
+        if (GameInput::keyDown(KEY_E)) angularAcceleration.z += flight.rollAcceleration;
 
         flight.angularVelocity.z += angularAcceleration.z * dt;
         flight.angularVelocity.z = Clamp(
@@ -282,12 +283,12 @@ void ShipControlSystem::update(GameWorld& world, float dt)
 
         const bool noTranslationIntent =
             std::fabs(flight.throttle) < 0.01f &&
-            !IsKeyDown(KEY_W) &&
-            !IsKeyDown(KEY_S) &&
-            !IsKeyDown(KEY_A) &&
-            !IsKeyDown(KEY_D) &&
-            !IsKeyDown(KEY_SPACE) &&
-            !IsKeyDown(KEY_LEFT_CONTROL);
+            !GameInput::keyDown(KEY_W) &&
+            !GameInput::keyDown(KEY_S) &&
+            !GameInput::keyDown(KEY_A) &&
+            !GameInput::keyDown(KEY_D) &&
+            !GameInput::keyDown(KEY_SPACE) &&
+            !GameInput::keyDown(KEY_LEFT_CONTROL);
 
         // Flight Assist only controls linear drift braking.
         if (flight.flightAssist && noTranslationIntent)
@@ -301,7 +302,7 @@ void ShipControlSystem::update(GameWorld& world, float dt)
             );
         }
 
-        if (!IsKeyDown(KEY_Q) && !IsKeyDown(KEY_E))
+        if (!GameInput::keyDown(KEY_Q) && !GameInput::keyDown(KEY_E))
         {
             const float angularDampingAmount = Clamp(flight.angularDamping * dt, 0.0f, 1.0f);
 

@@ -1,3 +1,4 @@
+#include "input/GameInput.h"
 #include "systems/OrbitalCruiseSystem.h"
 
 #include "components/TransformComponent.h"
@@ -26,7 +27,7 @@ namespace SpaceSim
             return;
         }
 
-        if (!IsKeyDown(KEY_LEFT_SHIFT))
+        if (!GameInput::keyDown(KEY_LEFT_SHIFT))
         {
             return;
         }

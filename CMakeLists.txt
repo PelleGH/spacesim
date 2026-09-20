@@ -247,6 +247,9 @@ add_executable(RendererLab
     src/engine/renderer/planet/PlanetPass.h
     src/engine/renderer/planet/PlanetMaterial.h
     src/engine/renderer/planet/PlanetRenderObject.h
+
+    src/engine/renderer/planet/AdaptivePlanetSurfaceRenderer.cpp
+    src/engine/renderer/planet/AdaptivePlanetSurfaceRenderer.h
 )
 
 target_include_directories(RendererLab PRIVATE
@@ -310,3 +313,29 @@ foreach(planet_target SpaceSim OceanSurfaceCheck)
         src/game/planet/PlanetTile.cpp
         src/game/rendering/AdaptivePlanetRenderer.cpp)
 endforeach()
+
+# Playable integration target. Reuse RendererLab's passes and the original gameplay systems.
+# Raylib contributes data/math headers only; it does not create a second window/context.
+get_target_property(SPACESIM_MODERN_SOURCES RendererLab SOURCES)
+list(REMOVE_ITEM SPACESIM_MODERN_SOURCES src/renderlab/main.cpp)
+add_executable(SpaceSimNext ${SPACESIM_MODERN_SOURCES}
+    src/game/integration/main.cpp
+    src/game/integration/GameSimulation.cpp
+    src/game/integration/GameRenderBridge.cpp
+    src/game/integration/GameHud.cpp
+    src/game/input/SdlGameInput.cpp
+    src/game/world/StarSystemLoader.cpp
+    src/game/systems/ShipControlSystem.cpp
+    src/game/systems/CameraSystem.cpp
+    src/game/systems/FTLSystem.cpp
+    src/game/systems/PlayerGlobalPositionSystem.cpp
+    src/game/systems/PlanetProximitySystem.cpp
+    src/game/systems/OrbitalCruiseSystem.cpp
+    src/game/systems/AtmosphereSystem.cpp
+    src/game/systems/BubbleSystem.cpp
+    src/game/systems/LightingSystem.cpp)
+target_compile_definitions(SpaceSimNext PRIVATE SPACESIM_SDL_GAME)
+target_include_directories(SpaceSimNext PRIVATE src src/engine src/game "${raylib_SOURCE_DIR}/src")
+target_link_libraries(SpaceSimNext PRIVATE SDL3::SDL3 glad_gl_core_45 glm::glm assimp::assimp EnTT::EnTT nlohmann_json::nlohmann_json)
+add_custom_command(TARGET SpaceSimNext POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/data" "$<TARGET_FILE_DIR:SpaceSimNext>/data")

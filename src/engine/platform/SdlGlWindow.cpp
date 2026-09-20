@@ -171,6 +171,9 @@ namespace SpaceSim
         SDL_GL_SwapWindow(m_window);
     }
 
+    void SdlGlWindow::captureMouse(bool capture) { SDL_SetWindowRelativeMouseMode(m_window,capture); }
+    void SdlGlWindow::toggleFullscreen() { SDL_SetWindowFullscreen(m_window,(SDL_GetWindowFlags(m_window)&SDL_WINDOW_FULLSCREEN)==0); }
+
     int SdlGlWindow::pixelWidth() const
     {
         int width = 0;

@@ -1,6 +1,6 @@
 #version 450 core
 
-layout(depth_less) out float gl_FragDepth;
+// Analytic sea-level correction can straddle raster depth at grazing angles.
 layout(location = 0)
 out vec4 outColor;
 
@@ -2638,7 +2638,7 @@ void main()
     gl_FragDepth=gl_FragCoord.z;
     if(analyticOcean) {
         vec4 clip=projection*view*vec4(surfacePosition,1);
-        gl_FragDepth=clip.z/clip.w*.5+.5;
+        gl_FragDepth=clip.z/clip.w;
     }
     vec3 centerLightDirection =
         normalize(

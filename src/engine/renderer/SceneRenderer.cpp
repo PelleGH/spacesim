@@ -188,6 +188,9 @@ namespace SpaceSim
         // Night-side planet occlusion is handled analytically by
         // the atmosphere/star direction logic.
 
+        // Shadow maps retain the standard depth convention.
+        glClipControl(GL_LOWER_LEFT,GL_NEGATIVE_ONE_TO_ONE);
+        glDepthFunc(GL_LESS);glDepthMask(GL_TRUE);glClearDepth(1.0);
         m_shadowMap.bindForWriting();
 
         glEnable(
@@ -218,7 +221,10 @@ namespace SpaceSim
         // PASS 2: HDR SCENE
         // =========================================================
 
+        // Reversed floating-point depth preserves nearby ships and distant planets.
         m_hdrTarget.bind();
+        glClipControl(GL_LOWER_LEFT,GL_ZERO_TO_ONE);
+        glDepthFunc(GL_GEQUAL);glDepthMask(GL_TRUE);glClearDepth(0.0);
 
         glViewport(
             0,
@@ -492,6 +498,8 @@ namespace SpaceSim
 
         // =========================================================
         // PASS 3: ATMOSPHERE
+        glClipControl(GL_LOWER_LEFT,GL_NEGATIVE_ONE_TO_ONE);
+        glDepthFunc(GL_LESS);glClearDepth(1.0);
         // =========================================================
 
         GLuint finalHdrTexture =

@@ -16,10 +16,10 @@ namespace SpaceSim
     glm::mat4 RenderCamera::projectionMatrix(
         float aspectRatio) const
     {
-        return glm::perspective(
+        return glm::perspectiveRH_ZO(
             glm::radians(verticalFovDegrees),
             aspectRatio,
-            nearPlane,
-            farPlane);
+            farPlane,
+            nearPlane);
     }
 }

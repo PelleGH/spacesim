@@ -1076,7 +1076,7 @@ namespace SpaceSim
                     planet.modelMatrix));
 
 
-            planet.mesh->draw();
+            m_adaptiveTerrain.drawOrMesh(planet, camera);
         }
     }
 }

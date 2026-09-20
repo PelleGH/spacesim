@@ -9,7 +9,7 @@
 #include "renderer/opengl/GlShader.h"
 
 #include "renderer/planet/PlanetRenderObject.h"
-
+#include "renderer/planet/AdaptivePlanetSurfaceRenderer.h"
 #include <glad/gl.h>
 
 #include <memory>
@@ -47,6 +47,7 @@ namespace SpaceSim
 
 
     private:
+        AdaptivePlanetSurfaceRenderer m_adaptiveTerrain;
         // Normal whole-planet renderer.
         GlShader m_shader;
 
