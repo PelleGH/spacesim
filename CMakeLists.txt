@@ -214,6 +214,28 @@ add_executable(RendererLab
 
     src/engine/renderer/opengl/ShadowMap.cpp
     src/engine/renderer/opengl/ShadowMap.h
+
+    src/renderlab/TestEnvironment.cpp
+    src/renderlab/TestEnvironment.h
+
+    src/engine/renderer/opengl/GlTextureCube.cpp
+    src/engine/renderer/opengl/GlTextureCube.h
+
+    src/engine/renderer/EnvironmentPass.cpp
+    src/engine/renderer/EnvironmentPass.h
+
+    src/engine/renderer/opengl/GlTextureCube.cpp
+    src/engine/renderer/opengl/GlTextureCube.h
+
+    src/engine/renderer/BloomPass.cpp
+    src/engine/renderer/BloomPass.h
+
+    src/engine/renderer/atmosphere/AtmosphereInstance.h
+    src/engine/renderer/atmosphere/AtmospherePass.cpp
+    src/engine/renderer/atmosphere/AtmospherePass.h
+
+    src/engine/renderer/atmosphere/AtmosphereViewLuts.cpp
+    src/engine/renderer/atmosphere/AtmosphereViewLuts.h
 )
 
 target_include_directories(RendererLab PRIVATE

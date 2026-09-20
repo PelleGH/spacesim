@@ -1,0 +1,1023 @@
+#version 450 core
+
+
+layout(
+    local_size_x = 8,
+    local_size_y = 8,
+    local_size_z = 1
+) in;
+
+
+layout(binding = 2)
+uniform sampler2D transmittanceLut;
+
+
+layout(binding = 3)
+uniform sampler2D multipleScatteringLut;
+
+
+layout(
+    rgba16f,
+    binding = 0
+)
+writeonly uniform image2D skyIrradianceLut;
+
+
+// =============================================================
+// ATMOSPHERE
+// =============================================================
+
+uniform float bottomRadiusKm;
+
+uniform float topRadiusKm;
+
+
+uniform vec3 rayleighScatteringPerKm;
+
+uniform float rayleighScaleHeightKm;
+
+
+uniform vec3 mieScatteringPerKm;
+
+uniform vec3 mieExtinctionPerKm;
+
+uniform float mieScaleHeightKm;
+
+uniform float mieAnisotropy;
+
+
+uniform vec3 ozoneAbsorptionPerKm;
+
+uniform float ozoneCenterHeightKm;
+
+uniform float ozoneHalfWidthKm;
+
+
+// Set by the common AtmosphereLuts helper.
+//
+// Not directly required here, but keeping the atmosphere shader
+// interface consistent is useful.
+uniform vec3 groundAlbedo;
+
+
+// =============================================================
+// CONSTANTS
+// =============================================================
+
+const float PI =
+    3.14159265359;
+
+
+// Number of directions over the upper hemisphere.
+const int DIRECTION_COUNT =
+    32;
+
+
+// Number of atmosphere samples along each sky direction.
+const int RAY_SAMPLE_COUNT =
+    16;
+
+
+// =============================================================
+// DENSITY
+// =============================================================
+
+float rayleighDensity(
+    float altitudeKm)
+{
+    return exp(
+        -max(
+            altitudeKm,
+            0.0)
+        /
+        rayleighScaleHeightKm);
+}
+
+
+float mieDensity(
+    float altitudeKm)
+{
+    return exp(
+        -max(
+            altitudeKm,
+            0.0)
+        /
+        mieScaleHeightKm);
+}
+
+
+float ozoneDensity(
+    float altitudeKm)
+{
+    float distanceFromLayer =
+        abs(
+            altitudeKm -
+            ozoneCenterHeightKm);
+
+
+    return max(
+        0.0,
+        1.0 -
+        distanceFromLayer /
+        ozoneHalfWidthKm);
+}
+
+
+vec3 scatteringAtAltitude(
+    float altitudeKm)
+{
+    return
+        rayleighScatteringPerKm *
+        rayleighDensity(
+            altitudeKm)
+        +
+        mieScatteringPerKm *
+        mieDensity(
+            altitudeKm);
+}
+
+
+vec3 extinctionAtAltitude(
+    float altitudeKm)
+{
+    return
+        rayleighScatteringPerKm *
+        rayleighDensity(
+            altitudeKm)
+        +
+        mieExtinctionPerKm *
+        mieDensity(
+            altitudeKm)
+        +
+        ozoneAbsorptionPerKm *
+        ozoneDensity(
+            altitudeKm);
+}
+
+
+// =============================================================
+// NUMERICALLY-STABLE SPHERE INTERSECTION
+// =============================================================
+
+bool raySphereIntervalKm(
+    vec3 originKm,
+    vec3 direction,
+    float sphereRadiusKm,
+    out float tNearKm,
+    out float tFarKm)
+{
+    // Normalize the planet to approximately radius 1 before
+    // calculating the discriminant.
+
+    float scale =
+        bottomRadiusKm;
+
+
+    vec3 origin =
+        originKm /
+        scale;
+
+
+    float radius =
+        sphereRadiusKm /
+        scale;
+
+
+    float b =
+        dot(
+            origin,
+            direction);
+
+
+    float c =
+        dot(
+            origin,
+            origin)
+        -
+        radius *
+        radius;
+
+
+    float discriminant =
+        b *
+        b -
+        c;
+
+
+    if (discriminant < 0.0)
+    {
+        tNearKm =
+            -1.0;
+
+        tFarKm =
+            -1.0;
+
+        return false;
+    }
+
+
+    float root =
+        sqrt(
+            max(
+                discriminant,
+                0.0));
+
+
+    tNearKm =
+        (
+            -b -
+            root
+        )
+        *
+        scale;
+
+
+    tFarKm =
+        (
+            -b +
+            root
+        )
+        *
+        scale;
+
+
+    return
+        tFarKm >
+        0.0;
+}
+
+
+float nearestSphereIntersectionKm(
+    vec3 originKm,
+    vec3 direction,
+    float sphereRadiusKm)
+{
+    float tNearKm;
+
+    float tFarKm;
+
+
+    if (!raySphereIntervalKm(
+            originKm,
+            direction,
+            sphereRadiusKm,
+            tNearKm,
+            tFarKm))
+    {
+        return
+            -1.0;
+    }
+
+
+    if (tNearKm > 0.000001)
+    {
+        return
+            tNearKm;
+    }
+
+
+    if (tFarKm > 0.000001)
+    {
+        return
+            tFarKm;
+    }
+
+
+    return
+        -1.0;
+}
+
+
+// =============================================================
+// TRANSMITTANCE LUT
+// =============================================================
+
+bool rayHitsGroundKm(
+    vec3 positionKm,
+    vec3 direction)
+{
+    return
+        nearestSphereIntersectionKm(
+            positionKm,
+            direction,
+            bottomRadiusKm)
+        >
+        0.000001;
+}
+
+
+vec2 transmittanceUv(
+    vec3 positionKm,
+    vec3 direction)
+{
+    float radius =
+        length(
+            positionKm);
+
+
+    vec3 localUp =
+        positionKm /
+        radius;
+
+
+    float mu =
+        clamp(
+            dot(
+                localUp,
+                direction),
+            -1.0,
+            1.0);
+
+
+    float H =
+        sqrt(
+            max(
+                topRadiusKm *
+                topRadiusKm
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+
+    float rho =
+        sqrt(
+            max(
+                radius *
+                radius
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+
+    float discriminant =
+        radius *
+        radius *
+        (
+            mu *
+            mu -
+            1.0
+        )
+        +
+        topRadiusKm *
+        topRadiusKm;
+
+
+    float distanceToTop =
+        -radius *
+        mu
+        +
+        sqrt(
+            max(
+                discriminant,
+                0.0));
+
+
+    float distanceMinimum =
+        topRadiusKm -
+        radius;
+
+
+    float distanceMaximum =
+        rho +
+        H;
+
+
+    float xMu =
+        (
+            distanceToTop -
+            distanceMinimum
+        )
+        /
+        max(
+            distanceMaximum -
+            distanceMinimum,
+            0.000001);
+
+
+    float xRadius =
+        rho /
+        max(
+            H,
+            0.000001);
+
+
+    vec2 parameterUv =
+        clamp(
+            vec2(
+                xMu,
+                xRadius),
+            vec2(0.0),
+            vec2(1.0));
+
+
+    vec2 size =
+        vec2(
+            textureSize(
+                transmittanceLut,
+                0));
+
+
+    return
+        (
+            parameterUv *
+            (
+                size -
+                vec2(1.0)
+            )
+            +
+            vec2(0.5)
+        )
+        /
+        size;
+}
+
+
+vec3 sampleTransmittanceToSpace(
+    vec3 positionKm,
+    vec3 direction)
+{
+    if (rayHitsGroundKm(
+            positionKm,
+            direction))
+    {
+        return
+            vec3(0.0);
+    }
+
+
+    return textureLod(
+        transmittanceLut,
+        transmittanceUv(
+            positionKm,
+            direction),
+        0.0).rgb;
+}
+
+
+// =============================================================
+// MULTIPLE SCATTERING
+// =============================================================
+
+vec3 sampleMultipleScattering(
+    vec3 positionKm,
+    vec3 directionToSun)
+{
+    float radius =
+        length(
+            positionKm);
+
+
+    vec3 localUp =
+        positionKm /
+        radius;
+
+
+    float sunMu =
+        clamp(
+            dot(
+                localUp,
+                directionToSun),
+            -1.0,
+            1.0);
+
+
+    float u =
+        sunMu *
+        0.5 +
+        0.5;
+
+
+    float altitudeKm =
+        radius -
+        bottomRadiusKm;
+
+
+    float atmosphereThicknessKm =
+        topRadiusKm -
+        bottomRadiusKm;
+
+
+    float v =
+        clamp(
+            altitudeKm /
+            atmosphereThicknessKm,
+            0.0,
+            1.0);
+
+
+    return textureLod(
+        multipleScatteringLut,
+        vec2(
+            u,
+            v),
+        0.0).rgb;
+}
+
+
+// =============================================================
+// PHASE FUNCTIONS
+// =============================================================
+
+float rayleighPhase(
+    float cosTheta)
+{
+    return
+        3.0 /
+        (
+            16.0 *
+            PI
+        )
+        *
+        (
+            1.0 +
+            cosTheta *
+            cosTheta
+        );
+}
+
+
+float miePhase(
+    float cosTheta,
+    float g)
+{
+    float g2 =
+        g *
+        g;
+
+
+    float denominator =
+        1.0 +
+        g2 -
+        2.0 *
+        g *
+        cosTheta;
+
+
+    return
+        (
+            1.0 -
+            g2
+        )
+        /
+        (
+            4.0 *
+            PI *
+            pow(
+                max(
+                    denominator,
+                    0.0001),
+                1.5)
+        );
+}
+
+
+// =============================================================
+// HEMISPHERE SAMPLE DIRECTIONS
+// =============================================================
+//
+// Uniform solid-angle samples over z > 0.
+//
+// Because our local surface normal is +Z:
+//
+//     direction.z = N dot direction
+
+vec3 hemisphereDirection(
+    int index)
+{
+    float i =
+        float(index)
+        +
+        0.5;
+
+
+    float count =
+        float(
+            DIRECTION_COUNT);
+
+
+    float z =
+        i /
+        count;
+
+
+    float radial =
+        sqrt(
+            max(
+                1.0 -
+                z *
+                z,
+                0.0));
+
+
+    const float goldenAngle =
+        2.399963229728653;
+
+
+    float phi =
+        goldenAngle *
+        i;
+
+
+    return vec3(
+        cos(phi) *
+        radial,
+
+        sin(phi) *
+        radial,
+
+        z);
+}
+
+
+// =============================================================
+// INTEGRATE SKY RADIANCE ALONG ONE DIRECTION
+// =============================================================
+
+vec3 integrateSkyRadiance(
+    vec3 positionKm,
+    vec3 rayDirection,
+    vec3 directionToSun)
+{
+    float distanceToTopKm =
+        nearestSphereIntersectionKm(
+            positionKm,
+            rayDirection,
+            topRadiusKm);
+
+
+    if (distanceToTopKm <= 0.000001)
+    {
+        return
+            vec3(0.0);
+    }
+
+
+    float scatteringAngleCosine =
+        clamp(
+            dot(
+                rayDirection,
+                directionToSun),
+            -1.0,
+            1.0);
+
+
+    float phaseRayleigh =
+        rayleighPhase(
+            scatteringAngleCosine);
+
+
+    float phaseMie =
+        miePhase(
+            scatteringAngleCosine,
+            mieAnisotropy);
+
+
+    vec3 accumulatedRadiance =
+        vec3(0.0);
+
+
+    vec3 viewTransmittance =
+        vec3(1.0);
+
+
+    // Density is highest at the start of these upward-facing rays.
+    //
+    // Use u² so more samples are concentrated near the current
+    // position rather than wasting them in the thin upper atmosphere.
+
+    for (int sampleIndex = 0;
+         sampleIndex < RAY_SAMPLE_COUNT;
+         ++sampleIndex)
+    {
+        float u0 =
+            float(sampleIndex)
+            /
+            float(
+                RAY_SAMPLE_COUNT);
+
+
+        float u1 =
+            float(sampleIndex + 1)
+            /
+            float(
+                RAY_SAMPLE_COUNT);
+
+
+        float mapped0 =
+            u0 *
+            u0;
+
+
+        float mapped1 =
+            u1 *
+            u1;
+
+
+        float sampleStartKm =
+            mapped0 *
+            distanceToTopKm;
+
+
+        float sampleEndKm =
+            mapped1 *
+            distanceToTopKm;
+
+
+        float stepLengthKm =
+            sampleEndKm -
+            sampleStartKm;
+
+
+        float sampleDistanceKm =
+            (
+                sampleStartKm +
+                sampleEndKm
+            )
+            *
+            0.5;
+
+
+        vec3 samplePositionKm =
+            positionKm
+            +
+            rayDirection *
+            sampleDistanceKm;
+
+
+        float altitudeKm =
+            max(
+                length(
+                    samplePositionKm)
+                -
+                bottomRadiusKm,
+                0.0);
+
+
+        float densityRayleigh =
+            rayleighDensity(
+                altitudeKm);
+
+
+        float densityMie =
+            mieDensity(
+                altitudeKm);
+
+
+        vec3 localExtinction =
+            extinctionAtAltitude(
+                altitudeKm);
+
+
+        vec3 segmentTransmittance =
+            exp(
+                -localExtinction *
+                stepLengthKm);
+
+
+        vec3 midpointTransmittance =
+            viewTransmittance
+            *
+            sqrt(
+                segmentTransmittance);
+
+
+        vec3 sunTransmittance =
+            sampleTransmittanceToSpace(
+                samplePositionKm,
+                directionToSun);
+
+
+        vec3 directScattering =
+            rayleighScatteringPerKm
+            *
+            densityRayleigh
+            *
+            phaseRayleigh
+            +
+            mieScatteringPerKm
+            *
+            densityMie
+            *
+            phaseMie;
+
+
+        vec3 directSource =
+            sunTransmittance
+            *
+            directScattering;
+
+
+        vec3 multipleSource =
+            scatteringAtAltitude(
+                altitudeKm)
+            *
+            sampleMultipleScattering(
+                samplePositionKm,
+                directionToSun);
+
+
+        accumulatedRadiance +=
+            midpointTransmittance
+            *
+            (
+                directSource +
+                multipleSource
+            )
+            *
+            stepLengthKm;
+
+
+        viewTransmittance *=
+            segmentTransmittance;
+    }
+
+
+    return
+        accumulatedRadiance;
+}
+
+
+// =============================================================
+// MAIN
+// =============================================================
+
+void main()
+{
+    ivec2 size =
+        imageSize(
+            skyIrradianceLut);
+
+
+    ivec2 pixel =
+        ivec2(
+            gl_GlobalInvocationID.xy);
+
+
+    if (pixel.x >= size.x ||
+        pixel.y >= size.y)
+    {
+        return;
+    }
+
+
+    // =========================================================
+    // X = SUN ZENITH
+    // =========================================================
+    //
+    // Concentrate more resolution around sunMu = 0 because
+    // sunrise/sunset changes extremely quickly around the horizon.
+
+    float x =
+        size.x > 1
+            ?
+            float(pixel.x)
+            /
+            float(size.x - 1)
+            :
+            0.5;
+
+
+    float encodedSunMu =
+        x *
+        2.0 -
+        1.0;
+
+
+    float sunMu =
+        sign(
+            encodedSunMu)
+        *
+        encodedSunMu
+        *
+        encodedSunMu;
+
+
+    float sunHorizontal =
+        sqrt(
+            max(
+                1.0 -
+                sunMu *
+                sunMu,
+                0.0));
+
+
+    vec3 directionToSun =
+        normalize(
+            vec3(
+                sunHorizontal,
+                0.0,
+                sunMu));
+
+
+    // =========================================================
+    // Y = ALTITUDE
+    // =========================================================
+    //
+    // y² puts more altitude resolution close to the ground.
+
+    float y =
+        size.y > 1
+            ?
+            float(pixel.y)
+            /
+            float(size.y - 1)
+            :
+            0.0;
+
+
+    float altitudeFraction =
+        y *
+        y;
+
+
+    float atmosphereThicknessKm =
+        topRadiusKm -
+        bottomRadiusKm;
+
+
+    float altitudeKm =
+        altitudeFraction *
+        atmosphereThicknessKm;
+
+
+    float radiusKm =
+        bottomRadiusKm
+        +
+        altitudeKm;
+
+
+    // Small offset avoids treating a surface point as being
+    // numerically inside the planet.
+    radiusKm =
+        max(
+            radiusKm,
+            bottomRadiusKm +
+            0.001);
+
+
+    vec3 positionKm =
+        vec3(
+            0.0,
+            0.0,
+            radiusKm);
+
+
+    // =========================================================
+    // INTEGRATE UPPER HEMISPHERE
+    // =========================================================
+
+    vec3 irradiance =
+        vec3(0.0);
+
+
+    const float sampleSolidAngle =
+        2.0 *
+        PI /
+        float(
+            DIRECTION_COUNT);
+
+
+    for (int directionIndex = 0;
+         directionIndex < DIRECTION_COUNT;
+         ++directionIndex)
+    {
+        vec3 direction =
+            hemisphereDirection(
+                directionIndex);
+
+
+        vec3 radiance =
+            integrateSkyRadiance(
+                positionKm,
+                direction,
+                directionToSun);
+
+
+        // Diffuse irradiance:
+        //
+        // E = integral L(w) * cos(theta) dOmega
+        //
+        // local normal is +Z.
+
+        float cosineWeight =
+            direction.z;
+
+
+        irradiance +=
+            radiance
+            *
+            cosineWeight
+            *
+            sampleSolidAngle;
+    }
+
+
+    imageStore(
+        skyIrradianceLut,
+        pixel,
+        vec4(
+            irradiance,
+            1.0));
+}

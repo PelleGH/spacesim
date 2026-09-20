@@ -1,20 +1,18 @@
 #version 450 core
 
+
 layout(location = 0)
 in vec2 vUV;
+
 
 layout(location = 0)
 out vec4 outColor;
 
 
-uniform sampler2D hdrTexture;
-
-uniform sampler2D bloomTexture;
+uniform sampler2D debugTexture;
 
 
 uniform float exposure;
-
-uniform float bloomStrength;
 
 
 vec3 acesApprox(
@@ -62,38 +60,32 @@ vec3 acesApprox(
 
 void main()
 {
-    vec3 hdrColor =
+    // Flip Y so the first row of our LUT appears at
+    // the TOP of the debug display.
+    vec2 uv =
+        vec2(
+            vUV.x,
+            1.0 -
+            vUV.y);
+
+
+    vec3 value =
         texture(
-            hdrTexture,
-            vUV).rgb;
+            debugTexture,
+            uv).rgb;
 
 
-    vec3 bloom =
-        texture(
-            bloomTexture,
-            vUV).rgb;
-
-
-    // Bloom is combined while we are STILL in HDR space.
-    //
-    // Tone mapping comes afterward.
-    vec3 combinedHdr =
-        hdrColor +
-        bloom *
-        bloomStrength;
-
-
-    combinedHdr *=
+    value *=
         exposure;
 
 
-    vec3 mappedColor =
+    value =
         acesApprox(
-            combinedHdr);
+            value);
 
 
     outColor =
         vec4(
-            mappedColor,
+            value,
             1.0);
 }

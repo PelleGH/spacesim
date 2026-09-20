@@ -4,26 +4,24 @@ namespace SpaceSim
 {
     PostProcessPass::PostProcessPass()
         : m_shader(
-            "data/shaders/renderer/fullscreen.vert",
-            "data/shaders/renderer/tonemap.frag")
+              "data/shaders/renderer/fullscreen.vert",
+              "data/shaders/renderer/tonemap.frag")
     {
-        // Core OpenGL requires a VAO to be bound,
-        // even though our fullscreen triangle has
-        // no actual vertex buffer.
         glCreateVertexArrays(
             1,
             &m_vertexArray);
 
-        const GLint textureLocation =
-            glGetUniformLocation(
-                m_shader.id(),
-                "hdrTexture");
 
-        glProgramUniform1i(
-            m_shader.id(),
-            textureLocation,
+        m_shader.setInt(
+            "hdrTexture",
             0);
+
+
+        m_shader.setInt(
+            "bloomTexture",
+            1);
     }
+
 
     PostProcessPass::~PostProcessPass()
     {
@@ -35,38 +33,55 @@ namespace SpaceSim
         }
     }
 
+
     void PostProcessPass::render(
         GLuint hdrTexture,
-        float exposure)
+        GLuint bloomTexture,
+        float exposure,
+        float bloomStrength)
     {
-        glDisable(GL_DEPTH_TEST);
+        glDisable(
+            GL_DEPTH_TEST);
+
 
         m_shader.use();
 
-        const GLint exposureLocation =
-            glGetUniformLocation(
-                m_shader.id(),
-                "exposure");
 
-        glProgramUniform1f(
-            m_shader.id(),
-            exposureLocation,
+        m_shader.setFloat(
+            "exposure",
             exposure);
+
+
+        m_shader.setFloat(
+            "bloomStrength",
+            bloomStrength);
+
 
         glBindTextureUnit(
             0,
             hdrTexture);
 
+
+        glBindTextureUnit(
+            1,
+            bloomTexture);
+
+
         glBindVertexArray(
             m_vertexArray);
+
 
         glDrawArrays(
             GL_TRIANGLES,
             0,
             3);
 
-        glBindVertexArray(0);
 
-        glEnable(GL_DEPTH_TEST);
+        glBindVertexArray(
+            0);
+
+
+        glEnable(
+            GL_DEPTH_TEST);
     }
 }

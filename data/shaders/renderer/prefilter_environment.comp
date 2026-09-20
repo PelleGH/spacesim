@@ -1,0 +1,379 @@
+#version 450 core
+
+layout(
+    local_size_x = 8,
+    local_size_y = 8,
+    local_size_z = 1
+) in;
+
+
+layout(binding = 2)
+uniform samplerCube environmentMap;
+
+
+layout(
+    rgba16f,
+    binding = 0
+)
+writeonly uniform imageCube prefilteredMap;
+
+
+uniform float roughness;
+
+
+const float PI =
+    3.14159265359;
+
+const uint SAMPLE_COUNT =
+    256u;
+
+
+// =============================================================
+// CUBEMAP FACE -> DIRECTION
+// =============================================================
+
+vec3 cubeDirection(
+    uint face,
+    vec2 uv)
+{
+    if (face == 0u)
+    {
+        return normalize(
+            vec3(
+                 1.0,
+                -uv.y,
+                -uv.x));
+    }
+
+    if (face == 1u)
+    {
+        return normalize(
+            vec3(
+                -1.0,
+                -uv.y,
+                 uv.x));
+    }
+
+    if (face == 2u)
+    {
+        return normalize(
+            vec3(
+                 uv.x,
+                 1.0,
+                 uv.y));
+    }
+
+    if (face == 3u)
+    {
+        return normalize(
+            vec3(
+                 uv.x,
+                -1.0,
+                -uv.y));
+    }
+
+    if (face == 4u)
+    {
+        return normalize(
+            vec3(
+                 uv.x,
+                -uv.y,
+                 1.0));
+    }
+
+    return normalize(
+        vec3(
+            -uv.x,
+            -uv.y,
+            -1.0));
+}
+
+
+// =============================================================
+// HAMMERSLEY SAMPLE SEQUENCE
+// =============================================================
+
+float radicalInverseVanDerCorput(
+    uint bits)
+{
+    bits =
+        (bits << 16u) |
+        (bits >> 16u);
+
+    bits =
+        (
+            (bits & 0x55555555u) << 1u
+        ) |
+        (
+            (bits & 0xAAAAAAAAu) >> 1u
+        );
+
+    bits =
+        (
+            (bits & 0x33333333u) << 2u
+        ) |
+        (
+            (bits & 0xCCCCCCCCu) >> 2u
+        );
+
+    bits =
+        (
+            (bits & 0x0F0F0F0Fu) << 4u
+        ) |
+        (
+            (bits & 0xF0F0F0F0u) >> 4u
+        );
+
+    bits =
+        (
+            (bits & 0x00FF00FFu) << 8u
+        ) |
+        (
+            (bits & 0xFF00FF00u) >> 8u
+        );
+
+    return
+        float(bits) *
+        2.3283064365386963e-10;
+}
+
+
+vec2 hammersley(
+    uint index,
+    uint count)
+{
+    return vec2(
+        float(index) /
+        float(count),
+
+        radicalInverseVanDerCorput(
+            index));
+}
+
+
+// =============================================================
+// GGX IMPORTANCE SAMPLE
+// =============================================================
+
+vec3 importanceSampleGGX(
+    vec2 xi,
+    vec3 N,
+    float materialRoughness)
+{
+    float safeRoughness =
+        max(
+            materialRoughness,
+            0.001);
+
+    float a =
+        safeRoughness *
+        safeRoughness;
+
+    float a2 =
+        a *
+        a;
+
+
+    float phi =
+        2.0 *
+        PI *
+        xi.x;
+
+    float cosTheta =
+        sqrt(
+            (
+                1.0 -
+                xi.y
+            ) /
+            (
+                1.0 +
+                (
+                    a2 -
+                    1.0
+                ) *
+                xi.y
+            ));
+
+    float sinTheta =
+        sqrt(
+            max(
+                1.0 -
+                cosTheta *
+                cosTheta,
+                0.0));
+
+
+    vec3 H;
+
+    H.x =
+        cos(phi) *
+        sinTheta;
+
+    H.y =
+        sin(phi) *
+        sinTheta;
+
+    H.z =
+        cosTheta;
+
+
+    vec3 helper =
+        abs(N.z) < 0.999
+            ? vec3(
+                0.0,
+                0.0,
+                1.0)
+            : vec3(
+                1.0,
+                0.0,
+                0.0);
+
+    vec3 tangent =
+        normalize(
+            cross(
+                helper,
+                N));
+
+    vec3 bitangent =
+        cross(
+            N,
+            tangent);
+
+
+    return normalize(
+        tangent *
+        H.x +
+
+        bitangent *
+        H.y +
+
+        N *
+        H.z);
+}
+
+
+// =============================================================
+// MAIN
+// =============================================================
+
+void main()
+{
+    ivec2 size =
+        imageSize(
+            prefilteredMap);
+
+    ivec2 pixel =
+        ivec2(
+            gl_GlobalInvocationID.xy);
+
+    uint face =
+        gl_GlobalInvocationID.z;
+
+
+    if (pixel.x >= size.x ||
+        pixel.y >= size.y ||
+        face >= 6u)
+    {
+        return;
+    }
+
+
+    vec2 uv =
+        (
+            vec2(pixel) +
+            vec2(0.5)
+        ) /
+        vec2(size);
+
+    uv =
+        uv *
+        2.0 -
+        1.0;
+
+
+    vec3 N =
+        cubeDirection(
+            face,
+            uv);
+
+    // For environment prefiltering we use the normal
+    // direction as the reflection/view direction.
+    vec3 R =
+        N;
+
+    vec3 V =
+        R;
+
+
+    vec3 prefilteredColor =
+        vec3(0.0);
+
+    float totalWeight =
+        0.0;
+
+
+    for (uint i = 0u;
+         i < SAMPLE_COUNT;
+         ++i)
+    {
+        vec2 xi =
+            hammersley(
+                i,
+                SAMPLE_COUNT);
+
+        vec3 H =
+            importanceSampleGGX(
+                xi,
+                N,
+                roughness);
+
+        vec3 L =
+            normalize(
+                2.0 *
+                dot(
+                    V,
+                    H) *
+                H -
+                V);
+
+        float NdotL =
+            max(
+                dot(
+                    N,
+                    L),
+                0.0);
+
+
+        if (NdotL > 0.0)
+        {
+            vec3 sampleColor =
+                textureLod(
+                    environmentMap,
+                    L,
+                    0.0).rgb;
+
+            prefilteredColor +=
+                sampleColor *
+                NdotL;
+
+            totalWeight +=
+                NdotL;
+        }
+    }
+
+
+    prefilteredColor /=
+        max(
+            totalWeight,
+            0.0001);
+
+
+    imageStore(
+        prefilteredMap,
+        ivec3(
+            pixel,
+            int(face)),
+        vec4(
+            prefilteredColor,
+            1.0));
+}

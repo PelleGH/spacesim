@@ -1,0 +1,548 @@
+#version 450 core
+
+
+layout(
+    local_size_x = 8,
+    local_size_y = 8,
+    local_size_z = 1
+) in;
+
+
+layout(
+    rgba16f,
+    binding = 0
+)
+writeonly uniform image2D transmittanceLut;
+
+
+// =============================================================
+// ATMOSPHERE PARAMETERS
+// =============================================================
+
+uniform float bottomRadiusKm;
+
+uniform float topRadiusKm;
+
+
+uniform vec3 rayleighScatteringPerKm;
+
+uniform float rayleighScaleHeightKm;
+
+
+uniform vec3 mieExtinctionPerKm;
+
+uniform float mieScaleHeightKm;
+
+
+uniform vec3 ozoneAbsorptionPerKm;
+
+uniform float ozoneCenterHeightKm;
+
+uniform float ozoneHalfWidthKm;
+
+
+// =============================================================
+// INTEGRATION SETTINGS
+// =============================================================
+
+// This LUT is generated once, so we can afford substantially
+// more accuracy here than in our per-screen-pixel reference
+// atmosphere marcher.
+//
+// Each side of the closest approach receives this many samples.
+//
+// Typical ray:
+//     64 samples
+//
+// Tangent/downward-but-not-ground-hit ray:
+//     up to 128 samples.
+const int SAMPLES_PER_SEGMENT =
+    64;
+
+
+// =============================================================
+// DENSITY
+// =============================================================
+
+float rayleighDensity(
+    float altitudeKm)
+{
+    return exp(
+        -max(
+            altitudeKm,
+            0.0)
+        /
+        rayleighScaleHeightKm);
+}
+
+
+float mieDensity(
+    float altitudeKm)
+{
+    return exp(
+        -max(
+            altitudeKm,
+            0.0)
+        /
+        mieScaleHeightKm);
+}
+
+
+float ozoneDensity(
+    float altitudeKm)
+{
+    float distanceFromLayer =
+        abs(
+            altitudeKm -
+            ozoneCenterHeightKm);
+
+
+    return max(
+        0.0,
+        1.0 -
+        distanceFromLayer /
+        ozoneHalfWidthKm);
+}
+
+
+// =============================================================
+// EXTINCTION
+// =============================================================
+
+vec3 extinctionAtAltitude(
+    float altitudeKm)
+{
+    return
+        rayleighScatteringPerKm *
+        rayleighDensity(
+            altitudeKm)
+        +
+        mieExtinctionPerKm *
+        mieDensity(
+            altitudeKm)
+        +
+        ozoneAbsorptionPerKm *
+        ozoneDensity(
+            altitudeKm);
+}
+
+
+// =============================================================
+// SAMPLE DISTRIBUTION
+// =============================================================
+
+// Samples become denser toward the END.
+float clusterTowardEnd(
+    float u)
+{
+    float inverse =
+        1.0 -
+        u;
+
+
+    return
+        1.0 -
+        inverse *
+        inverse;
+}
+
+
+// Samples become denser toward the START.
+float clusterTowardStart(
+    float u)
+{
+    return
+        u *
+        u;
+}
+
+
+// =============================================================
+// INTEGRATE ONE PART OF THE RAY
+// =============================================================
+
+void integrateSegment(
+    vec3 origin,
+    vec3 direction,
+    float segmentStart,
+    float segmentEnd,
+    bool clusterAtStart,
+    inout vec3 opticalDepth)
+{
+    float segmentLength =
+        segmentEnd -
+        segmentStart;
+
+
+    if (segmentLength <= 0.000001)
+    {
+        return;
+    }
+
+
+    for (int i = 0;
+         i < SAMPLES_PER_SEGMENT;
+         ++i)
+    {
+        float u0 =
+            float(i)
+            /
+            float(
+                SAMPLES_PER_SEGMENT);
+
+
+        float u1 =
+            float(i + 1)
+            /
+            float(
+                SAMPLES_PER_SEGMENT);
+
+
+        float mapped0;
+        float mapped1;
+
+
+        if (clusterAtStart)
+        {
+            mapped0 =
+                clusterTowardStart(
+                    u0);
+
+
+            mapped1 =
+                clusterTowardStart(
+                    u1);
+        }
+        else
+        {
+            mapped0 =
+                clusterTowardEnd(
+                    u0);
+
+
+            mapped1 =
+                clusterTowardEnd(
+                    u1);
+        }
+
+
+        float sampleStart =
+            mix(
+                segmentStart,
+                segmentEnd,
+                mapped0);
+
+
+        float sampleEnd =
+            mix(
+                segmentStart,
+                segmentEnd,
+                mapped1);
+
+
+        float stepLength =
+            sampleEnd -
+            sampleStart;
+
+
+        float sampleDistance =
+            (
+                sampleStart +
+                sampleEnd
+            )
+            *
+            0.5;
+
+
+        vec3 samplePosition =
+            origin +
+            direction *
+            sampleDistance;
+
+
+        float altitudeKm =
+            max(
+                length(
+                    samplePosition)
+                -
+                bottomRadiusKm,
+                0.0);
+
+
+        opticalDepth +=
+            extinctionAtAltitude(
+                altitudeKm)
+            *
+            stepLength;
+    }
+}
+
+
+// =============================================================
+// CALCULATE TRANSMITTANCE
+// =============================================================
+
+vec3 integrateTransmittance(
+    float radius,
+    float mu,
+    float distanceToTop)
+{
+    float horizontal =
+        sqrt(
+            max(
+                1.0 -
+                mu *
+                mu,
+                0.0));
+
+
+    vec3 origin =
+        vec3(
+            0.0,
+            0.0,
+            radius);
+
+
+    vec3 direction =
+        normalize(
+            vec3(
+                horizontal,
+                0.0,
+                mu));
+
+
+    // Point on this ray closest to the planet center.
+    float closestApproach =
+        -dot(
+            origin,
+            direction);
+
+
+    closestApproach =
+        clamp(
+            closestApproach,
+            0.0,
+            distanceToTop);
+
+
+    vec3 opticalDepth =
+        vec3(
+            0.0);
+
+
+    // Camera/start -> closest point.
+    //
+    // Density increases toward the END.
+    integrateSegment(
+        origin,
+        direction,
+        0.0,
+        closestApproach,
+        false,
+        opticalDepth);
+
+
+    // Closest point -> atmosphere exit.
+    //
+    // Density is highest at the START.
+    integrateSegment(
+        origin,
+        direction,
+        closestApproach,
+        distanceToTop,
+        true,
+        opticalDepth);
+
+
+    return exp(
+        -opticalDepth);
+}
+
+
+// =============================================================
+// HORIZON-AWARE LUT PARAMETERIZATION
+// =============================================================
+//
+// Instead of storing:
+//
+//     X = mu linearly from -1 to +1
+//
+// we parameterize X using the distance to the atmospheric
+// boundary.
+//
+// Y is based on:
+//
+//     rho = sqrt(r^2 - bottomRadius^2)
+//
+// rather than linear altitude.
+//
+// This concentrates substantially more precision in the region
+// around the horizon where atmospheric paths change extremely
+// quickly.
+//
+// Importantly, this texture ONLY contains rays which escape to
+// the top of the atmosphere.
+//
+// Rays blocked by the planet are tested analytically by callers.
+// We do not put a hard black ground mask inside this texture.
+// =============================================================
+
+void transmittanceParametersFromUv(
+    vec2 uv,
+    out float radius,
+    out float mu,
+    out float distanceToTop)
+{
+    float H =
+        sqrt(
+            max(
+                topRadiusKm *
+                topRadiusKm
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+
+    float rho =
+        H *
+        uv.y;
+
+
+    radius =
+        sqrt(
+            rho *
+            rho
+            +
+            bottomRadiusKm *
+            bottomRadiusKm);
+
+
+    float distanceMinimum =
+        topRadiusKm -
+        radius;
+
+
+    float distanceMaximum =
+        rho +
+        H;
+
+
+    distanceToTop =
+        distanceMinimum
+        +
+        uv.x *
+        (
+            distanceMaximum -
+            distanceMinimum
+        );
+
+
+    if (distanceToTop <= 0.000001)
+    {
+        mu =
+            1.0;
+
+        return;
+    }
+
+
+    mu =
+        (
+            topRadiusKm *
+            topRadiusKm
+            -
+            radius *
+            radius
+            -
+            distanceToTop *
+            distanceToTop
+        )
+        /
+        (
+            2.0 *
+            radius *
+            distanceToTop
+        );
+
+
+    mu =
+        clamp(
+            mu,
+            -1.0,
+            1.0);
+}
+
+
+// =============================================================
+// MAIN
+// =============================================================
+
+void main()
+{
+    ivec2 size =
+        imageSize(
+            transmittanceLut);
+
+
+    ivec2 pixel =
+        ivec2(
+            gl_GlobalInvocationID.xy);
+
+
+    if (pixel.x >= size.x ||
+        pixel.y >= size.y)
+    {
+        return;
+    }
+
+
+    // Use the complete [0,1] mathematical parameter range.
+    //
+    // When sampling later we convert it to texel-center
+    // coordinates so filtering remains stable.
+    vec2 parameterUv =
+        vec2(
+            float(pixel.x)
+            /
+            float(
+                max(
+                    size.x -
+                    1,
+                    1)),
+
+            float(pixel.y)
+            /
+            float(
+                max(
+                    size.y -
+                    1,
+                    1)));
+
+
+    float radius;
+    float mu;
+    float distanceToTop;
+
+
+    transmittanceParametersFromUv(
+        parameterUv,
+        radius,
+        mu,
+        distanceToTop);
+
+
+    vec3 transmittance =
+        integrateTransmittance(
+            radius,
+            mu,
+            distanceToTop);
+
+
+    imageStore(
+        transmittanceLut,
+        pixel,
+        vec4(
+            transmittance,
+            1.0));
+}

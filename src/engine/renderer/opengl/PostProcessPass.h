@@ -10,6 +10,7 @@ namespace SpaceSim
     {
     public:
         PostProcessPass();
+
         ~PostProcessPass();
 
         PostProcessPass(
@@ -20,11 +21,14 @@ namespace SpaceSim
 
         void render(
             GLuint hdrTexture,
-            float exposure);
+            GLuint bloomTexture,
+            float exposure,
+            float bloomStrength);
 
     private:
         GlShader m_shader;
 
-        GLuint m_vertexArray = 0;
+        GLuint m_vertexArray =
+            0;
     };
 }
