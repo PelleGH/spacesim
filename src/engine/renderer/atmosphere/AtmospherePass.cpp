@@ -2,6 +2,7 @@
 
 #include "renderer/CameraRayReconstruction.h"
 
+#include "renderer/atmosphere/AtmosphereLuts.h"
 #include "renderer/atmosphere/AtmosphereParameters.h"
 
 #include <glm/geometric.hpp>
@@ -32,18 +33,18 @@ namespace SpaceSim
 
 
         m_shader.setInt(
+            "transmittanceLut",
+            2);
+
+
+        m_shader.setInt(
+            "multipleScatteringLut",
+            3);
+
+
+        m_shader.setInt(
             "skyViewTexture",
             4);
-
-
-        m_shader.setInt(
-            "aerialScatteringTexture",
-            5);
-
-
-        m_shader.setInt(
-            "aerialTransmittanceTexture",
-            6);
     }
 
 
@@ -226,6 +227,10 @@ namespace SpaceSim
             *atmosphere.parameters;
 
 
+        const AtmosphereLuts& staticLuts =
+            *atmosphere.luts;
+
+
         const glm::mat4 rayReconstructionMatrix =
             makeCameraRayReconstructionMatrix(
                 camera,
@@ -265,9 +270,6 @@ namespace SpaceSim
         m_shader.use();
 
 
-        // The shader uniform keeps its old name for now, but the value
-        // is a stable analytic ray-reconstruction matrix rather than
-        // inverse(projection * view).
         m_shader.setMat4(
             "inverseViewProjection",
             rayReconstructionMatrix);
@@ -289,6 +291,11 @@ namespace SpaceSim
                 sun.direction));
 
 
+        m_shader.setVec3(
+            "sunRadiance",
+            sun.radiance);
+
+
         m_shader.setFloat(
             "kmPerWorldUnit",
             kmPerWorldUnit);
@@ -304,9 +311,64 @@ namespace SpaceSim
             parameters.topRadiusKm);
 
 
+        m_shader.setVec3(
+            "rayleighScatteringPerKm",
+            parameters.rayleighScatteringPerKm);
+
+
+        m_shader.setFloat(
+            "rayleighScaleHeightKm",
+            parameters.rayleighScaleHeightKm);
+
+
+        m_shader.setVec3(
+            "mieScatteringPerKm",
+            parameters.mieScatteringPerKm);
+
+
+        m_shader.setVec3(
+            "mieExtinctionPerKm",
+            parameters.mieExtinctionPerKm);
+
+
+        m_shader.setFloat(
+            "mieScaleHeightKm",
+            parameters.mieScaleHeightKm);
+
+
+        m_shader.setFloat(
+            "mieAnisotropy",
+            parameters.mieAnisotropy);
+
+
+        m_shader.setVec3(
+            "ozoneAbsorptionPerKm",
+            parameters.ozoneAbsorptionPerKm);
+
+
+        m_shader.setFloat(
+            "ozoneCenterHeightKm",
+            parameters.ozoneCenterHeightKm);
+
+
+        m_shader.setFloat(
+            "ozoneHalfWidthKm",
+            parameters.ozoneHalfWidthKm);
+
+
         // =========================================================
         // INPUT TEXTURES
         // =========================================================
+        //
+        // The old final pass sampled:
+        //
+        //     aerialScatteringTexture
+        //     aerialTransmittanceTexture
+        //
+        // Those are deliberately NOT bound anymore.
+        //
+        // The exact camera-to-fragment atmosphere segment is now
+        // integrated directly by atmosphere_planet.frag.
 
         glBindTextureUnit(
             0,
@@ -319,18 +381,22 @@ namespace SpaceSim
 
 
         glBindTextureUnit(
+            2,
+            staticLuts
+                .transmittance()
+                .id());
+
+
+        glBindTextureUnit(
+            3,
+            staticLuts
+                .multipleScattering()
+                .id());
+
+
+        glBindTextureUnit(
             4,
             viewLuts.skyViewTexture());
-
-
-        glBindTextureUnit(
-            5,
-            viewLuts.aerialScatteringTexture());
-
-
-        glBindTextureUnit(
-            6,
-            viewLuts.aerialTransmittanceTexture());
 
 
         // =========================================================

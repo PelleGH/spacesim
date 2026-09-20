@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cmath>
 
-
 namespace SpaceSim
 {
     SceneRenderer::SceneRenderer()
@@ -29,17 +28,44 @@ namespace SpaceSim
     {
     }
 
+    void SceneRenderer::render(
+        int width,
+        int height,
+        const RenderCamera &camera,
+        const DirectionalLight &sun,
+        const EnvironmentLight &environment,
+        const GlTextureCube &environmentMap,
+        const EnvironmentIbl &environmentIbl,
+        const std::vector<RenderObject> &objects,
+        const AtmosphereInstance *atmosphere)
+    {
+        static const std::vector<PlanetRenderObject>
+            noPlanets;
+
+        render(
+            width,
+            height,
+            camera,
+            sun,
+            environment,
+            environmentMap,
+            environmentIbl,
+            noPlanets,
+            objects,
+            atmosphere);
+    }
 
     void SceneRenderer::render(
         int width,
         int height,
-        const RenderCamera& camera,
-        const DirectionalLight& sun,
-        const EnvironmentLight& environment,
-        const GlTextureCube& environmentMap,
-        const EnvironmentIbl& environmentIbl,
-        const std::vector<RenderObject>& objects,
-        const AtmosphereInstance* atmosphere)
+        const RenderCamera &camera,
+        const DirectionalLight &sun,
+        const EnvironmentLight &environment,
+        const GlTextureCube &environmentMap,
+        const EnvironmentIbl &environmentIbl,
+        const std::vector<PlanetRenderObject> &planets,
+        const std::vector<RenderObject> &objects,
+        const AtmosphereInstance *atmosphere)
     {
         if (width <= 0 ||
             height <= 0)
@@ -47,37 +73,27 @@ namespace SpaceSim
             return;
         }
 
-
         m_hdrTarget.resize(
             width,
             height);
 
-
         const float aspect =
             static_cast<float>(
-                width)
-            /
+                width) /
             static_cast<float>(
                 height);
 
-
         const bool atmosphereActive =
-            atmosphere != nullptr
-            &&
+            atmosphere != nullptr &&
             atmosphere->valid();
 
-
         const bool atmosphereLightingActive =
-            atmosphereActive
-            &&
+            atmosphereActive &&
             m_atmosphereLightingEnabled;
 
-
         const bool atmosphereSpecularActive =
-            atmosphereActive
-            &&
+            atmosphereActive &&
             m_atmosphereSpecularEnabled;
-
 
         // =========================================================
         // VIEW-DEPENDENT ATMOSPHERE
@@ -92,9 +108,8 @@ namespace SpaceSim
                 *atmosphere);
         }
 
-
         // =========================================================
-        // SUN SHADOW CAMERA
+        // SHADOW CAMERA
         // =========================================================
 
         glm::vec3 sceneCenter(
@@ -102,58 +117,47 @@ namespace SpaceSim
             0.0f,
             0.0f);
 
-
         float shadowExtent =
             10.0f;
-
 
         if (atmosphereActive)
         {
             sceneCenter =
                 atmosphere->planetCenterWorld;
 
-
             shadowExtent =
                 std::max(
                     10.0f,
                     atmosphere->planetRadiusWorld *
-                    1.15f);
+                        1.15f);
         }
-
 
         const float lightDistance =
             shadowExtent *
             3.0f;
 
-
         const glm::vec3 lightPosition =
-            sceneCenter
-            +
+            sceneCenter +
             sun.direction *
-            lightDistance;
-
+                lightDistance;
 
         glm::vec3 lightUp(
             0.0f,
             1.0f,
             0.0f);
 
-
         if (std::abs(
                 glm::dot(
                     sun.direction,
-                    lightUp))
-            >
+                    lightUp)) >
             0.95f)
         {
             lightUp =
-            {
-                0.0f,
-                0.0f,
-                1.0f
-            };
+                {
+                    0.0f,
+                    0.0f,
+                    1.0f};
         }
-
 
         const glm::mat4 lightView =
             glm::lookAt(
@@ -161,43 +165,41 @@ namespace SpaceSim
                 sceneCenter,
                 lightUp);
 
-
         const glm::mat4 lightProjection =
             glm::ortho(
                 -shadowExtent,
-                 shadowExtent,
+                shadowExtent,
                 -shadowExtent,
-                 shadowExtent,
-                 0.1f,
-                 lightDistance *
-                 2.0f);
-
+                shadowExtent,
+                0.1f,
+                lightDistance *
+                    2.0f);
 
         const glm::mat4 lightSpaceMatrix =
             lightProjection *
             lightView;
 
-
         // =========================================================
-        // PASS 1: SHADOW MAP
+        // PASS 1: LOCAL OBJECT SHADOW MAP
         // =========================================================
+        //
+        // The planet itself does not need to render into this map.
+        //
+        // Night-side planet occlusion is handled analytically by
+        // the atmosphere/star direction logic.
 
         m_shadowMap.bindForWriting();
-
 
         glEnable(
             GL_DEPTH_TEST);
 
-
         m_shadowShader.use();
-
 
         m_shadowShader.setMat4(
             "lightSpaceMatrix",
             lightSpaceMatrix);
 
-
-        for (const RenderObject& object :
+        for (const RenderObject &object :
              objects)
         {
             if (!object.mesh)
@@ -205,15 +207,12 @@ namespace SpaceSim
                 continue;
             }
 
-
             m_shadowShader.setMat4(
                 "model",
                 object.modelMatrix);
 
-
             object.mesh->draw();
         }
-
 
         // =========================================================
         // PASS 2: HDR SCENE
@@ -221,50 +220,39 @@ namespace SpaceSim
 
         m_hdrTarget.bind();
 
-
         glViewport(
             0,
             0,
             width,
             height);
 
-
-        const GLfloat background[4]
-        {
+        const GLfloat background[4]{
             0.0f,
             0.0f,
             0.0f,
-            1.0f
-        };
-
+            1.0f};
 
         glClearBufferfv(
             GL_COLOR,
             0,
             background);
 
-
-        const GLfloat noGeometry[4]
-        {
+        const GLfloat noGeometry[4]{
             0.0f,
             0.0f,
             0.0f,
-            0.0f
-        };
-
+            0.0f};
 
         glClearBufferfv(
             GL_COLOR,
             1,
             noGeometry);
 
-
         glClear(
             GL_DEPTH_BUFFER_BIT);
 
-
         // =========================================================
-        // PASS 2A: SPACE ENVIRONMENT
+        // PASS 2A: ENVIRONMENT
         // =========================================================
 
         if (!atmosphereActive)
@@ -275,9 +263,8 @@ namespace SpaceSim
                 environmentMap);
         }
 
-
         // =========================================================
-        // PASS 2B: STARFIELD + PRIMARY STAR
+        // PASS 2B: STARFIELD / PRIMARY STAR
         // =========================================================
 
         m_starPass.render(
@@ -285,87 +272,84 @@ namespace SpaceSim
             aspect,
             sun);
 
-
         // =========================================================
-        // PASS 2C: PBR GEOMETRY
+        // PASS 2C: PLANETS
         // =========================================================
+        //
+        // Planet now has its own dedicated material path.
+        //
+        // It still writes ordinary hardware depth and linear scene
+        // depth, so everything after this works exactly as before.
 
         glEnable(
             GL_DEPTH_TEST);
 
+        m_planetPass.render(
+            camera,
+            aspect,
+            sun,
+            planets,
+            atmosphere,
+            m_atmosphereViewLuts.skyReflectionTexture());
+
+        // =========================================================
+        // PASS 2D: GENERIC PBR OBJECTS
+        // =========================================================
 
         m_pbrShader.use();
-
 
         m_pbrShader.setMat4(
             "view",
             camera.viewMatrix());
-
 
         m_pbrShader.setMat4(
             "projection",
             camera.projectionMatrix(
                 aspect));
 
-
         m_pbrShader.setVec3(
             "cameraPosition",
             camera.position);
-
 
         m_pbrShader.setVec3(
             "sunDirection",
             sun.direction);
 
-
         m_pbrShader.setVec3(
             "sunRadiance",
             sun.radiance);
-
 
         m_pbrShader.setVec3(
             "environmentDiffuseMultiplier",
             environment.diffuseMultiplier);
 
-
         m_pbrShader.setVec3(
             "environmentSpecularMultiplier",
             environment.specularMultiplier);
-
 
         m_pbrShader.setMat4(
             "lightSpaceMatrix",
             lightSpaceMatrix);
 
-
-        // =========================================================
-        // STANDARD PBR TEXTURES
-        // =========================================================
-
         m_pbrShader.setInt(
             "shadowMap",
             1);
-
 
         m_pbrShader.setInt(
             "irradianceMap",
             3);
 
-
         m_pbrShader.setInt(
             "prefilteredEnvironmentMap",
             4);
-
 
         m_pbrShader.setInt(
             "brdfLut",
             5);
 
-
         glBindTextureUnit(
             1,
             m_shadowMap.depthTexture());
-
 
         glBindTextureUnit(
             3,
@@ -373,20 +357,17 @@ namespace SpaceSim
                 .irradianceMap()
                 .id());
 
-
         glBindTextureUnit(
             4,
             environmentIbl
                 .prefilteredMap()
                 .id());
 
-
         glBindTextureUnit(
             5,
             environmentIbl
                 .brdfLut()
                 .id());
-
 
         // =========================================================
         // ATMOSPHERIC PBR INPUTS
@@ -396,86 +377,63 @@ namespace SpaceSim
             "atmosphereTransmittanceLut",
             7);
 
-
         m_pbrShader.setInt(
             "atmosphereSkyIrradianceLut",
             8);
-
 
         m_pbrShader.setInt(
             "atmosphereSkyViewLut",
             9);
 
-
         m_pbrShader.setInt(
             "atmosphereLightingEnabled",
             atmosphereLightingActive
-                ?
-                1
-                :
-                0);
-
+                ? 1
+                : 0);
 
         m_pbrShader.setInt(
             "atmosphereSpecularEnabled",
             atmosphereSpecularActive
-                ?
-                1
-                :
-                0);
-
+                ? 1
+                : 0);
 
         if (atmosphereActive)
         {
-            const AtmosphereParameters& parameters =
+            const AtmosphereParameters &parameters =
                 *atmosphere->parameters;
 
-
             const float kmPerWorldUnit =
-                parameters.bottomRadiusKm
-                /
+                parameters.bottomRadiusKm /
                 atmosphere->planetRadiusWorld;
 
-
             const float atmosphereThicknessWorld =
-                (
-                    parameters.topRadiusKm
-                    -
-                    parameters.bottomRadiusKm
-                )
-                /
+                (parameters.topRadiusKm -
+                 parameters.bottomRadiusKm) /
                 kmPerWorldUnit;
-
 
             m_pbrShader.setVec3(
                 "atmospherePlanetCenterWorld",
                 atmosphere->planetCenterWorld);
 
-
             m_pbrShader.setFloat(
                 "atmosphereKmPerWorldUnit",
                 kmPerWorldUnit);
-
 
             m_pbrShader.setFloat(
                 "atmosphereBottomRadiusKm",
                 parameters.bottomRadiusKm);
 
-
             m_pbrShader.setFloat(
                 "atmosphereTopRadiusKm",
                 parameters.topRadiusKm);
-
 
             m_pbrShader.setVec3(
                 "atmosphereGroundAlbedo",
                 parameters.groundAlbedo);
 
-
             m_pbrShader.setFloat(
                 "atmosphereSpecularProbeRangeWorld",
                 atmosphereThicknessWorld);
-
 
             glBindTextureUnit(
                 7,
@@ -484,7 +442,6 @@ namespace SpaceSim
                     ->transmittance()
                     .id());
 
-
             glBindTextureUnit(
                 8,
                 atmosphere
@@ -492,19 +449,13 @@ namespace SpaceSim
                     ->skyIrradiance()
                     .id());
 
-
             glBindTextureUnit(
                 9,
                 m_atmosphereViewLuts
                     .skyReflectionTexture());
         }
 
-
-        // =========================================================
-        // OBJECTS
-        // =========================================================
-
-        for (const RenderObject& object :
+        for (const RenderObject &object :
              objects)
         {
             if (!object.mesh)
@@ -512,48 +463,39 @@ namespace SpaceSim
                 continue;
             }
 
-
             m_pbrShader.setMat4(
                 "model",
                 object.modelMatrix);
-
 
             m_pbrShader.setVec3(
                 "baseColor",
                 object.material.baseColor);
 
-
             m_pbrShader.setFloat(
                 "metallic",
                 object.material.metallic);
-
 
             m_pbrShader.setFloat(
                 "roughness",
                 object.material.roughness);
 
-
             m_pbrShader.setVec3(
                 "emissiveColor",
                 object.material.emissiveColor);
-
 
             m_pbrShader.setFloat(
                 "emissiveStrength",
                 object.material.emissiveStrength);
 
-
             object.mesh->draw();
         }
 
-
         // =========================================================
-        // PASS 3: ATMOSPHERE COMPOSITE
+        // PASS 3: ATMOSPHERE
         // =========================================================
 
         GLuint finalHdrTexture =
             m_hdrTarget.colorTexture();
-
 
         if (atmosphereActive)
         {
@@ -570,22 +512,9 @@ namespace SpaceSim
                     m_atmosphereViewLuts);
         }
 
-
         // =========================================================
         // PASS 4: AUTO EXPOSURE
         // =========================================================
-        //
-        // Meter the actual finished HDR scene BEFORE bloom and
-        // tonemapping.
-        //
-        // This lets the exposure system see:
-        //
-        //     atmosphere
-        //     stars
-        //     planets
-        //     objects
-        //
-        // in their true HDR values.
 
         if (m_autoExposureEnabled)
         {
@@ -594,7 +523,6 @@ namespace SpaceSim
                 width,
                 height);
         }
-
 
         // =========================================================
         // PASS 5: BLOOM
@@ -606,7 +534,6 @@ namespace SpaceSim
                 width,
                 height);
 
-
         // =========================================================
         // PASS 6: TONEMAP
         // =========================================================
@@ -615,13 +542,11 @@ namespace SpaceSim
             GL_FRAMEBUFFER,
             0);
 
-
         glViewport(
             0,
             0,
             width,
             height);
-
 
         m_postProcess.render(
             finalHdrTexture,

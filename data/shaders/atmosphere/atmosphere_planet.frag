@@ -15,26 +15,35 @@ out vec4 outColor;
 
 uniform sampler2D sceneColorTexture;
 
-
-// Actual camera-to-fragment distance.
-//
-// 0 means there is no solid geometry.
 uniform sampler2D sceneLinearDepthTexture;
 
 
 // =============================================================
 // ATMOSPHERE LUTS
 // =============================================================
+//
+// The old compositor sampled a 3D aerial-perspective volume.
+//
+// This reference implementation does not.
+//
+// These two LUTs are camera-independent physical acceleration LUTs,
+// so keeping them does not introduce camera-distance slices.
+
+uniform sampler2D transmittanceLut;
+
+uniform sampler2D multipleScatteringLut;
+
+
+// Sky itself still uses the directional Sky-View LUT.
+//
+// This LUT is not indexed by scene distance, so it is unrelated to
+// the camera-centered aerial-depth rings.
 
 uniform sampler2D skyViewTexture;
 
-uniform sampler3D aerialScatteringTexture;
-
-uniform sampler3D aerialTransmittanceTexture;
-
 
 // =============================================================
-// CAMERA / PLANET
+// CAMERA / PLANET / STAR
 // =============================================================
 
 uniform mat4 inverseViewProjection;
@@ -47,6 +56,8 @@ uniform vec3 planetCenterWorld;
 
 uniform vec3 sunDirection;
 
+uniform vec3 sunRadiance;
+
 
 uniform float kmPerWorldUnit;
 
@@ -55,8 +66,48 @@ uniform float bottomRadiusKm;
 uniform float topRadiusKm;
 
 
+// =============================================================
+// ATMOSPHERE PHYSICS
+// =============================================================
+
+uniform vec3 rayleighScatteringPerKm;
+
+uniform float rayleighScaleHeightKm;
+
+
+uniform vec3 mieScatteringPerKm;
+
+uniform vec3 mieExtinctionPerKm;
+
+uniform float mieScaleHeightKm;
+
+uniform float mieAnisotropy;
+
+
+uniform vec3 ozoneAbsorptionPerKm;
+
+uniform float ozoneCenterHeightKm;
+
+uniform float ozoneHalfWidthKm;
+
+
+// =============================================================
+// CONSTANTS
+// =============================================================
+
 const float PI =
     3.14159265359;
+
+
+// Deliberately fixed for the reference implementation.
+//
+// We can optimize this after the rendering is verified.
+//
+// Keeping it fixed also avoids introducing visible thresholds from
+// changing sample counts at different distances.
+
+const int AERIAL_SAMPLE_COUNT =
+    12;
 
 
 // =============================================================
@@ -91,29 +142,34 @@ vec3 reconstructWorldRay(
 
 
 // =============================================================
-// WORLD-SPACE SPHERE INTERSECTION
+// SPHERE INTERSECTION
 // =============================================================
+//
+// Everything here is in kilometres.
+//
+// This avoids reconstructing an atmospheric distance from hardware
+// depth and avoids the old 3D LUT depth coordinate entirely.
 
-bool raySphereIntervalWorld(
-    vec3 origin,
+bool raySphereIntervalKm(
+    vec3 originKm,
     vec3 direction,
-    float radius,
-    out float tNear,
-    out float tFar)
+    float radiusKm,
+    out float tNearKm,
+    out float tFarKm)
 {
     float b =
         dot(
-            origin,
+            originKm,
             direction);
 
 
     float c =
         dot(
-            origin,
-            origin)
+            originKm,
+            originKm)
         -
-        radius *
-        radius;
+        radiusKm *
+        radiusKm;
 
 
     float discriminant =
@@ -124,10 +180,10 @@ bool raySphereIntervalWorld(
 
     if (discriminant < 0.0)
     {
-        tNear =
+        tNearKm =
             -1.0;
 
-        tFar =
+        tFarKm =
             -1.0;
 
         return false;
@@ -141,60 +197,679 @@ bool raySphereIntervalWorld(
                 0.0));
 
 
-    tNear =
+    tNearKm =
         -b -
         root;
 
 
-    tFar =
+    tFarKm =
         -b +
         root;
 
 
     return
-        tFar >
+        tFarKm >
         0.0;
 }
 
 
-float nearestSphereIntersectionWorld(
-    vec3 origin,
+float nearestSphereIntersectionKm(
+    vec3 originKm,
     vec3 direction,
-    float radius)
+    float radiusKm)
 {
-    float tNear;
+    float tNearKm;
 
-    float tFar;
+    float tFarKm;
 
 
-    if (!raySphereIntervalWorld(
-            origin,
+    if (!raySphereIntervalKm(
+            originKm,
             direction,
-            radius,
-            tNear,
-            tFar))
+            radiusKm,
+            tNearKm,
+            tFarKm))
     {
         return
             -1.0;
     }
 
 
-    if (tNear > 0.000001)
+    if (tNearKm >
+        0.000001)
     {
         return
-            tNear;
+            tNearKm;
     }
 
 
-    if (tFar > 0.000001)
+    if (tFarKm >
+        0.000001)
     {
         return
-            tFar;
+            tFarKm;
     }
 
 
     return
         -1.0;
+}
+
+
+bool rayHitsGroundKm(
+    vec3 positionKm,
+    vec3 direction)
+{
+    return
+        nearestSphereIntersectionKm(
+            positionKm,
+            direction,
+            bottomRadiusKm)
+        >
+        0.000001;
+}
+
+
+// =============================================================
+// DENSITY
+// =============================================================
+
+float rayleighDensity(
+    float altitudeKm)
+{
+    return exp(
+        -max(
+            altitudeKm,
+            0.0)
+        /
+        rayleighScaleHeightKm);
+}
+
+
+float mieDensity(
+    float altitudeKm)
+{
+    return exp(
+        -max(
+            altitudeKm,
+            0.0)
+        /
+        mieScaleHeightKm);
+}
+
+
+float ozoneDensity(
+    float altitudeKm)
+{
+    float distanceFromLayer =
+        abs(
+            altitudeKm -
+            ozoneCenterHeightKm);
+
+
+    return max(
+        0.0,
+        1.0 -
+        distanceFromLayer /
+        ozoneHalfWidthKm);
+}
+
+
+vec3 scatteringAtAltitude(
+    float altitudeKm)
+{
+    return
+        rayleighScatteringPerKm *
+        rayleighDensity(
+            altitudeKm)
+        +
+        mieScatteringPerKm *
+        mieDensity(
+            altitudeKm);
+}
+
+
+vec3 extinctionAtAltitude(
+    float altitudeKm)
+{
+    return
+        rayleighScatteringPerKm *
+        rayleighDensity(
+            altitudeKm)
+        +
+        mieExtinctionPerKm *
+        mieDensity(
+            altitudeKm)
+        +
+        ozoneAbsorptionPerKm *
+        ozoneDensity(
+            altitudeKm);
+}
+
+
+// =============================================================
+// TRANSMITTANCE LUT
+// =============================================================
+
+vec2 transmittanceUv(
+    vec3 positionKm,
+    vec3 direction)
+{
+    float radiusKm =
+        length(
+            positionKm);
+
+
+    vec3 localUp =
+        positionKm /
+        radiusKm;
+
+
+    float mu =
+        clamp(
+            dot(
+                localUp,
+                direction),
+            -1.0,
+            1.0);
+
+
+    float radius =
+        radiusKm /
+        bottomRadiusKm;
+
+
+    float topRadius =
+        topRadiusKm /
+        bottomRadiusKm;
+
+
+    const float bottomRadius =
+        1.0;
+
+
+    float H =
+        sqrt(
+            max(
+                topRadius *
+                topRadius -
+                bottomRadius *
+                bottomRadius,
+                0.0));
+
+
+    float rho =
+        sqrt(
+            max(
+                radius *
+                radius -
+                bottomRadius *
+                bottomRadius,
+                0.0));
+
+
+    float discriminant =
+        radius *
+        radius *
+        (
+            mu *
+            mu -
+            1.0
+        )
+        +
+        topRadius *
+        topRadius;
+
+
+    float distanceToTop =
+        -radius *
+        mu
+        +
+        sqrt(
+            max(
+                discriminant,
+                0.0));
+
+
+    float distanceMinimum =
+        topRadius -
+        radius;
+
+
+    float distanceMaximum =
+        rho +
+        H;
+
+
+    float xMu =
+        (
+            distanceToTop -
+            distanceMinimum
+        )
+        /
+        max(
+            distanceMaximum -
+            distanceMinimum,
+            0.000001);
+
+
+    float xRadius =
+        rho /
+        max(
+            H,
+            0.000001);
+
+
+    vec2 parameterUv =
+        clamp(
+            vec2(
+                xMu,
+                xRadius),
+            vec2(0.0),
+            vec2(1.0));
+
+
+    vec2 size =
+        vec2(
+            textureSize(
+                transmittanceLut,
+                0));
+
+
+    return
+        (
+            parameterUv *
+            (
+                size -
+                vec2(1.0)
+            )
+            +
+            vec2(0.5)
+        )
+        /
+        size;
+}
+
+
+vec3 sampleTransmittanceToSpace(
+    vec3 positionKm,
+    vec3 direction)
+{
+    if (rayHitsGroundKm(
+            positionKm,
+            direction))
+    {
+        return
+            vec3(0.0);
+    }
+
+
+    return textureLod(
+        transmittanceLut,
+        transmittanceUv(
+            positionKm,
+            direction),
+        0.0).rgb;
+}
+
+
+// =============================================================
+// MULTIPLE SCATTERING
+// =============================================================
+
+vec3 sampleMultipleScattering(
+    vec3 positionKm,
+    vec3 directionToSun)
+{
+    float radiusKm =
+        length(
+            positionKm);
+
+
+    vec3 localUp =
+        positionKm /
+        radiusKm;
+
+
+    float sunMu =
+        clamp(
+            dot(
+                localUp,
+                directionToSun),
+            -1.0,
+            1.0);
+
+
+    float u =
+        sunMu *
+        0.5 +
+        0.5;
+
+
+    float altitudeKm =
+        radiusKm -
+        bottomRadiusKm;
+
+
+    float thicknessKm =
+        topRadiusKm -
+        bottomRadiusKm;
+
+
+    float v =
+        clamp(
+            altitudeKm /
+            max(
+                thicknessKm,
+                0.000001),
+            0.0,
+            1.0);
+
+
+    return textureLod(
+        multipleScatteringLut,
+        vec2(
+            u,
+            v),
+        0.0).rgb;
+}
+
+
+// =============================================================
+// PHASE FUNCTIONS
+// =============================================================
+
+float rayleighPhase(
+    float cosTheta)
+{
+    return
+        3.0 /
+        (
+            16.0 *
+            PI
+        )
+        *
+        (
+            1.0 +
+            cosTheta *
+            cosTheta
+        );
+}
+
+
+float miePhase(
+    float cosTheta,
+    float g)
+{
+    float g2 =
+        g *
+        g;
+
+
+    float denominator =
+        1.0 +
+        g2 -
+        2.0 *
+        g *
+        cosTheta;
+
+
+    return
+        (
+            1.0 -
+            g2
+        )
+        /
+        (
+            4.0 *
+            PI *
+            pow(
+                max(
+                    denominator,
+                    0.0001),
+                1.5)
+        );
+}
+
+
+// =============================================================
+// DIRECT PER-PIXEL AERIAL PERSPECTIVE
+// =============================================================
+//
+// This replaces:
+//
+//     3D LUT Z slice
+//     → interpolate between stored path lengths
+//
+// with:
+//
+//     exact scene distance for this framebuffer pixel
+//     → integrate that exact atmospheric segment
+//
+// There is therefore no discrete aerial-distance axis anymore.
+
+struct AerialIntegrationResult
+{
+    vec3 scattering;
+
+    vec3 transmittance;
+};
+
+
+AerialIntegrationResult integrateAerialPerspective(
+    vec3 cameraRelativeKm,
+    vec3 rayDirection,
+    float rayStartKm,
+    float rayEndKm)
+{
+    AerialIntegrationResult result;
+
+
+    result.scattering =
+        vec3(0.0);
+
+
+    result.transmittance =
+        vec3(1.0);
+
+
+    float pathLengthKm =
+        max(
+            rayEndKm -
+            rayStartKm,
+            0.0);
+
+
+    if (pathLengthKm <=
+        0.000001)
+    {
+        return
+            result;
+    }
+
+
+    vec3 directionToSun =
+        normalize(
+            sunDirection);
+
+
+    float cosTheta =
+        clamp(
+            dot(
+                rayDirection,
+                directionToSun),
+            -1.0,
+            1.0);
+
+
+    float phaseRayleigh =
+        rayleighPhase(
+            cosTheta);
+
+
+    float phaseMie =
+        miePhase(
+            cosTheta,
+            mieAnisotropy);
+
+
+    // Cosine spacing concentrates samples near BOTH ends.
+    //
+    // That works both:
+    //
+    // - close to the surface, where the camera begins in dense air,
+    // - from orbit, where the dense part may be near the far end.
+
+    for (int i = 0;
+         i < AERIAL_SAMPLE_COUNT;
+         ++i)
+    {
+        float u0 =
+            float(i) /
+            float(
+                AERIAL_SAMPLE_COUNT);
+
+
+        float u1 =
+            float(i + 1) /
+            float(
+                AERIAL_SAMPLE_COUNT);
+
+
+        float mapped0 =
+            0.5 -
+            0.5 *
+            cos(
+                PI *
+                u0);
+
+
+        float mapped1 =
+            0.5 -
+            0.5 *
+            cos(
+                PI *
+                u1);
+
+
+        float sampleStartKm =
+            rayStartKm +
+            mapped0 *
+            pathLengthKm;
+
+
+        float sampleEndKm =
+            rayStartKm +
+            mapped1 *
+            pathLengthKm;
+
+
+        float stepLengthKm =
+            sampleEndKm -
+            sampleStartKm;
+
+
+        float sampleDistanceKm =
+            (
+                sampleStartKm +
+                sampleEndKm
+            )
+            *
+            0.5;
+
+
+        vec3 samplePositionKm =
+            cameraRelativeKm +
+            rayDirection *
+            sampleDistanceKm;
+
+
+        float altitudeKm =
+            max(
+                length(
+                    samplePositionKm)
+                -
+                bottomRadiusKm,
+                0.0);
+
+
+        float densityRayleigh =
+            rayleighDensity(
+                altitudeKm);
+
+
+        float densityMie =
+            mieDensity(
+                altitudeKm);
+
+
+        vec3 localExtinction =
+            extinctionAtAltitude(
+                altitudeKm);
+
+
+        vec3 segmentTransmittance =
+            exp(
+                -localExtinction *
+                stepLengthKm);
+
+
+        vec3 midpointTransmittance =
+            result.transmittance *
+            sqrt(
+                segmentTransmittance);
+
+
+        vec3 sunTransmittance =
+            sampleTransmittanceToSpace(
+                samplePositionKm,
+                directionToSun);
+
+
+        vec3 directScattering =
+            rayleighScatteringPerKm *
+            densityRayleigh *
+            phaseRayleigh
+            +
+            mieScatteringPerKm *
+            densityMie *
+            phaseMie;
+
+
+        vec3 directSource =
+            sunRadiance *
+            sunTransmittance *
+            directScattering;
+
+
+        vec3 multipleSource =
+            scatteringAtAltitude(
+                altitudeKm)
+            *
+            sampleMultipleScattering(
+                samplePositionKm,
+                directionToSun)
+            *
+            sunRadiance;
+
+
+        result.scattering +=
+            midpointTransmittance *
+            (
+                directSource +
+                multipleSource
+            )
+            *
+            stepLengthKm;
+
+
+        result.transmittance *=
+            segmentTransmittance;
+    }
+
+
+    return
+        result;
 }
 
 
@@ -254,10 +929,6 @@ vec2 skyViewLutUv(
             1.0);
 
 
-    // =========================================================
-    // SUN-RELATIVE AZIMUTH
-    // =========================================================
-
     vec3 normalizedSunDirection =
         normalize(
             sunDirection);
@@ -266,8 +937,7 @@ vec2 skyViewLutUv(
     vec3 sunTangent =
         normalizedSunDirection
         -
-        localUp
-        *
+        localUp *
         dot(
             normalizedSunDirection,
             localUp);
@@ -278,13 +948,9 @@ vec2 skyViewLutUv(
             sunTangent);
 
 
-    if (sunTangentLength < 0.000001)
+    if (sunTangentLength <
+        0.000001)
     {
-        // Sun is almost exactly at zenith/nadir.
-        //
-        // Azimuth is essentially irrelevant in this case, so pick
-        // any stable tangent direction.
-
         vec3 reference =
             abs(
                 localUp.y)
@@ -328,12 +994,12 @@ vec2 skyViewLutUv(
         1.0;
 
 
-    if (viewZenithSinAngle > 0.000001)
+    if (viewZenithSinAngle >
+        0.000001)
     {
         vec3 viewTangent =
             (
-                rayDirection
-                -
+                rayDirection -
                 localUp *
                 viewZenithCosAngle
             )
@@ -351,10 +1017,6 @@ vec2 skyViewLutUv(
     }
 
 
-    // =========================================================
-    // HORIZON ANGLES
-    // =========================================================
-
     float horizonDistance =
         sqrt(
             max(
@@ -368,8 +1030,7 @@ vec2 skyViewLutUv(
 
     float cosBeta =
         clamp(
-            horizonDistance
-            /
+            horizonDistance /
             max(
                 viewHeightKm,
                 0.000001),
@@ -395,15 +1056,10 @@ vec2 skyViewLutUv(
     vec2 uv;
 
 
-    // =========================================================
-    // NONLINEAR V
-    // =========================================================
-
     if (!intersectsGround)
     {
         float coord =
-            viewZenithAngle
-            /
+            viewZenithAngle /
             max(
                 zenithHorizonAngle,
                 0.000001);
@@ -441,8 +1097,7 @@ vec2 skyViewLutUv(
     {
         float coord =
             (
-                viewZenithAngle
-                -
+                viewZenithAngle -
                 zenithHorizonAngle
             )
             /
@@ -465,20 +1120,14 @@ vec2 skyViewLutUv(
 
         uv.y =
             coord *
-            0.5
-            +
+            0.5 +
             0.5;
     }
 
 
-    // =========================================================
-    // SUN-RELATIVE U
-    // =========================================================
-
     float azimuthCoord =
         -lightViewCosAngle *
-        0.5
-        +
+        0.5 +
         0.5;
 
 
@@ -494,68 +1143,12 @@ vec2 skyViewLutUv(
         azimuthCoord;
 
 
-    return
-        unitUvToSubUv(
-            uv,
-            vec2(
-                textureSize(
-                    skyViewTexture,
-                    0)));
-}
-
-
-// =============================================================
-// AERIAL PERSPECTIVE MAPPING
-// =============================================================
-
-float maximumAtmospherePathKm()
-{
-    return
-        2.0 *
-        sqrt(
-            max(
-                topRadiusKm *
-                topRadiusKm
-                -
-                bottomRadiusKm *
-                bottomRadiusKm,
-                0.0));
-}
-
-
-vec3 aerialTextureCoordinate(
-    vec2 screenUv,
-    float depthParameter)
-{
-    vec3 textureSizePixels =
-        vec3(
+    return unitUvToSubUv(
+        uv,
+        vec2(
             textureSize(
-                aerialScatteringTexture,
-                0));
-
-
-    vec3 parameter =
-        clamp(
-            vec3(
-                screenUv,
-                depthParameter),
-            vec3(0.0),
-            vec3(1.0));
-
-
-    return
-        (
-            parameter
-            *
-            (
-                textureSizePixels -
-                vec3(1.0)
-            )
-            +
-            vec3(0.5)
-        )
-        /
-        textureSizePixels;
+                skyViewTexture,
+                0)));
 }
 
 
@@ -571,7 +1164,7 @@ void main()
             vUV).rgb;
 
 
-    float sceneDistance =
+    float sceneDistanceWorld =
         texture(
             sceneLinearDepthTexture,
             vUV).r;
@@ -587,35 +1180,26 @@ void main()
         planetCenterWorld;
 
 
-    float bottomRadiusWorld =
-        bottomRadiusKm /
-        kmPerWorldUnit;
-
-
-    float topRadiusWorld =
-        topRadiusKm /
+    vec3 cameraRelativeKm =
+        cameraRelativeWorld *
         kmPerWorldUnit;
 
 
     // =========================================================
-    // FULL-RES ATMOSPHERE INTERSECTION
+    // EXACT ATMOSPHERIC SEGMENT FOR THIS PIXEL
     // =========================================================
-    //
-    // This decision happens here at framebuffer resolution.
-    //
-    // It is no longer baked into the low-resolution Sky-View LUT.
 
-    float atmosphereNear;
+    float atmosphereNearKm;
 
-    float atmosphereFar;
+    float atmosphereFarKm;
 
 
-    if (!raySphereIntervalWorld(
-            cameraRelativeWorld,
+    if (!raySphereIntervalKm(
+            cameraRelativeKm,
             rayDirection,
-            topRadiusWorld,
-            atmosphereNear,
-            atmosphereFar))
+            topRadiusKm,
+            atmosphereNearKm,
+            atmosphereFarKm))
     {
         outColor =
             vec4(
@@ -626,37 +1210,40 @@ void main()
     }
 
 
-    float rayStart =
+    float rayStartKm =
         max(
-            atmosphereNear,
+            atmosphereNearKm,
             0.0);
 
 
-    float rayEnd =
-        atmosphereFar;
+    float rayEndKm =
+        atmosphereFarKm;
 
 
-    float groundDistance =
-        nearestSphereIntersectionWorld(
-            cameraRelativeWorld,
+    float groundDistanceKm =
+        nearestSphereIntersectionKm(
+            cameraRelativeKm,
             rayDirection,
-            bottomRadiusWorld);
+            bottomRadiusKm);
 
 
     bool intersectsGround =
-        groundDistance > rayStart
+        groundDistanceKm >
+        rayStartKm
         &&
-        groundDistance < rayEnd;
+        groundDistanceKm <
+        rayEndKm;
 
 
     if (intersectsGround)
     {
-        rayEnd =
-            groundDistance;
+        rayEndKm =
+            groundDistanceKm;
     }
 
 
-    if (rayEnd <= rayStart)
+    if (rayEndKm <=
+        rayStartKm)
     {
         outColor =
             vec4(
@@ -671,7 +1258,8 @@ void main()
     // BACKGROUND / SKY
     // =========================================================
 
-    if (sceneDistance <= 0.0)
+    if (sceneDistanceWorld <=
+        0.0)
     {
         vec2 skyUv =
             skyViewLutUv(
@@ -687,52 +1275,37 @@ void main()
                 0.0).rgb;
 
 
-        // Background scene color may eventually contain stars.
-        //
-        // Determine the FULL physical atmospheric path so those
-        // stars can be attenuated correctly.
-        float fullPathWorld =
-            max(
-                rayEnd -
-                rayStart,
-                0.0);
+        vec3 backgroundTransmittance =
+            vec3(0.0);
 
 
-        float fullPathKm =
-            fullPathWorld *
-            kmPerWorldUnit;
+        if (!intersectsGround)
+        {
+            vec3 entryPositionKm =
+                cameraRelativeKm +
+                rayDirection *
+                rayStartKm;
 
 
-        float fullDepthParameter =
-            sqrt(
-                clamp(
-                    fullPathKm
-                    /
-                    max(
-                        maximumAtmospherePathKm(),
-                        0.000001),
-                    0.0,
-                    1.0));
+            // Move just inside the atmosphere when the camera begins
+            // outside it.
+
+            entryPositionKm +=
+                rayDirection *
+                0.001;
 
 
-        vec3 aerialUv =
-            aerialTextureCoordinate(
-                vUV,
-                fullDepthParameter);
-
-
-        vec3 fullTransmittance =
-            textureLod(
-                aerialTransmittanceTexture,
-                aerialUv,
-                0.0).rgb;
+            backgroundTransmittance =
+                sampleTransmittanceToSpace(
+                    entryPositionKm,
+                    rayDirection);
+        }
 
 
         outColor =
             vec4(
-                sceneColor
-                *
-                fullTransmittance
+                sceneColor *
+                backgroundTransmittance
                 +
                 skyRadiance,
                 1.0);
@@ -743,77 +1316,44 @@ void main()
 
 
     // =========================================================
-    // GEOMETRY / AERIAL PERSPECTIVE
+    // GEOMETRY / DIRECT PER-PIXEL AERIAL PERSPECTIVE
     // =========================================================
 
-    if (sceneDistance <= rayStart)
+    float sceneDistanceKm =
+        sceneDistanceWorld *
+        kmPerWorldUnit;
+
+
+    if (sceneDistanceKm <=
+        rayStartKm)
     {
-        // Geometry exists before the atmosphere starts.
+        // Geometry lies before the atmosphere starts.
         //
         // Example later:
-        // cockpit geometry while the ship is in space.
+        //
+        // ship/cockpit geometry while the camera is in space.
 
         outColor =
             vec4(
                 sceneColor,
                 1.0);
 
-
         return;
     }
 
 
-    float atmosphericDistance =
+    float atmosphericEndKm =
         min(
-            sceneDistance,
-            rayEnd);
+            sceneDistanceKm,
+            rayEndKm);
 
 
-    float atmosphericPathWorld =
-        max(
-            atmosphericDistance
-            -
-            rayStart,
-            0.0);
-
-
-    float atmosphericPathKm =
-        atmosphericPathWorld
-        *
-        kmPerWorldUnit;
-
-
-    // Aerial Z now represents GLOBAL PHYSICAL PATH LENGTH.
-    float depthParameter =
-        sqrt(
-            clamp(
-                atmosphericPathKm
-                /
-                max(
-                    maximumAtmospherePathKm(),
-                    0.000001),
-                0.0,
-                1.0));
-
-
-    vec3 aerialUv =
-        aerialTextureCoordinate(
-            vUV,
-            depthParameter);
-
-
-    vec3 scattering =
-        textureLod(
-            aerialScatteringTexture,
-            aerialUv,
-            0.0).rgb;
-
-
-    vec3 transmittance =
-        textureLod(
-            aerialTransmittanceTexture,
-            aerialUv,
-            0.0).rgb;
+    AerialIntegrationResult aerial =
+        integrateAerialPerspective(
+            cameraRelativeKm,
+            rayDirection,
+            rayStartKm,
+            atmosphericEndKm);
 
 
     // =========================================================
@@ -822,10 +1362,9 @@ void main()
 
     outColor =
         vec4(
-            sceneColor
-            *
-            transmittance
+            sceneColor *
+            aerial.transmittance
             +
-            scattering,
+            aerial.scattering,
             1.0);
 }

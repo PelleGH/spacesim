@@ -7,6 +7,7 @@
 
 #include <glad/gl.h>
 
+
 namespace SpaceSim
 {
     class AtmosphereViewLuts
@@ -21,11 +22,13 @@ namespace SpaceSim
         AtmosphereViewLuts& operator=(
             const AtmosphereViewLuts&) = delete;
 
+
         void update(
             const RenderCamera& camera,
             float aspectRatio,
             const DirectionalLight& sun,
             const AtmosphereInstance& atmosphere);
+
 
         GLuint skyViewTexture() const
         {
@@ -33,28 +36,19 @@ namespace SpaceSim
                 m_skyViewTexture;
         }
 
+
         GLuint skyReflectionTexture() const
         {
             return
                 m_skyReflectionTexture;
         }
 
-        GLuint aerialScatteringTexture() const
-        {
-            return
-                m_aerialScatteringTexture;
-        }
-
-        GLuint aerialTransmittanceTexture() const
-        {
-            return
-                m_aerialTransmittanceTexture;
-        }
 
     private:
         void createTextures();
 
         void destroyTextures();
+
 
         void setCommonUniforms(
             const GlComputeShader& shader,
@@ -63,11 +57,30 @@ namespace SpaceSim
             const DirectionalLight& sun,
             const AtmosphereInstance& atmosphere) const;
 
+
+        // =========================================================
+        // VIEW-DEPENDENT ATMOSPHERE
+        // =========================================================
+        //
+        // We intentionally no longer keep a 3D aerial-perspective
+        // volume here.
+        //
+        // Aerial perspective is now integrated continuously in
+        // atmosphere_planet.frag using the actual camera-to-fragment
+        // path distance.
+        //
+        // These two textures remain:
+        //
+        // 1. Sky View
+        //      directional atmosphere seen by the camera
+        //
+        // 2. Sky Reflection
+        //      GGX-prefiltered version used for reflective surfaces
+
         GlComputeShader m_skyViewShader;
 
         GlComputeShader m_skyReflectionPrefilterShader;
 
-        GlComputeShader m_aerialPerspectiveShader;
 
         GLuint m_skyViewTexture =
             0;
@@ -75,11 +88,6 @@ namespace SpaceSim
         GLuint m_skyReflectionTexture =
             0;
 
-        GLuint m_aerialScatteringTexture =
-            0;
-
-        GLuint m_aerialTransmittanceTexture =
-            0;
 
         static constexpr int SkyWidth =
             320;
@@ -89,14 +97,5 @@ namespace SpaceSim
 
         static constexpr int SkyMipLevels =
             9;
-
-        static constexpr int AerialWidth =
-            320;
-
-        static constexpr int AerialHeight =
-            180;
-
-        static constexpr int AerialDepth =
-            32;
     };
 }

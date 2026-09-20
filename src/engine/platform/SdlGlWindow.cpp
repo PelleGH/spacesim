@@ -56,6 +56,7 @@ namespace SpaceSim
             title,
             width,
             height,
+            (SDL_getenv("SPACESIM_HIDDEN_CHECK") ? SDL_WINDOW_HIDDEN : 0) |
             SDL_WINDOW_OPENGL |
             SDL_WINDOW_RESIZABLE |
             SDL_WINDOW_HIGH_PIXEL_DENSITY);

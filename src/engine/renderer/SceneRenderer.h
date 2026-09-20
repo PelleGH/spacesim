@@ -21,6 +21,9 @@
 #include "renderer/opengl/PostProcessPass.h"
 #include "renderer/opengl/ShadowMap.h"
 
+#include "renderer/planet/PlanetPass.h"
+#include "renderer/planet/PlanetRenderObject.h"
+
 #include <vector>
 
 
@@ -32,6 +35,10 @@ namespace SpaceSim
         SceneRenderer();
 
 
+        // Existing-compatible overload.
+        //
+        // Anything that doesn't use the dedicated planet path yet
+        // can continue calling SceneRenderer exactly as before.
         void render(
             int width,
             int height,
@@ -44,11 +51,20 @@ namespace SpaceSim
             const AtmosphereInstance* atmosphere = nullptr);
 
 
-        // This is now an exposure COMPENSATION value.
-        //
-        // 1.0 = neutral.
-        //
-        // Automatic exposure is calculated separately.
+        // New dedicated-planet overload.
+        void render(
+            int width,
+            int height,
+            const RenderCamera& camera,
+            const DirectionalLight& sun,
+            const EnvironmentLight& environment,
+            const GlTextureCube& environmentMap,
+            const EnvironmentIbl& environmentIbl,
+            const std::vector<PlanetRenderObject>& planets,
+            const std::vector<RenderObject>& objects,
+            const AtmosphereInstance* atmosphere = nullptr);
+
+
         float exposure() const
         {
             return
@@ -143,6 +159,9 @@ namespace SpaceSim
         StarPass m_starPass;
 
 
+        PlanetPass m_planetPass;
+
+
         AtmosphereViewLuts m_atmosphereViewLuts;
 
 
@@ -158,7 +177,6 @@ namespace SpaceSim
         PostProcessPass m_postProcess;
 
 
-        // Manual artistic adjustment on top of automatic exposure.
         float m_exposureCompensation =
             1.0f;
 

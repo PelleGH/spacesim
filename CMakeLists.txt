@@ -242,6 +242,11 @@ add_executable(RendererLab
 
     src/engine/renderer/AutoExposurePass.cpp
     src/engine/renderer/AutoExposurePass.h
+
+    src/engine/renderer/planet/PlanetPass.cpp
+    src/engine/renderer/planet/PlanetPass.h
+    src/engine/renderer/planet/PlanetMaterial.h
+    src/engine/renderer/planet/PlanetRenderObject.h
 )
 
 target_include_directories(RendererLab PRIVATE
