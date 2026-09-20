@@ -6,8 +6,8 @@
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 
+#include <algorithm>
 #include <cmath>
-
 
 namespace SpaceSim
 {
@@ -15,26 +15,37 @@ namespace SpaceSim
         : m_skyViewShader(
               "data/shaders/atmosphere/sky_view_runtime.comp"),
 
+          m_skyReflectionPrefilterShader(
+              "data/shaders/atmosphere/sky_reflection_prefilter.comp"),
+
           m_aerialPerspectiveShader(
               "data/shaders/atmosphere/aerial_perspective.comp")
     {
         createTextures();
 
-
         m_skyViewShader.setInt(
             "transmittanceLut",
             2);
-
 
         m_skyViewShader.setInt(
             "multipleScatteringLut",
             3);
 
+        m_skyReflectionPrefilterShader.setInt(
+            "skyViewLut",
+            2);
+
+        m_skyReflectionPrefilterShader.setInt(
+            "transmittanceLut",
+            3);
+
+        m_skyReflectionPrefilterShader.setInt(
+            "skyIrradianceLut",
+            4);
 
         m_aerialPerspectiveShader.setInt(
             "transmittanceLut",
             2);
-
 
         m_aerialPerspectiveShader.setInt(
             "multipleScatteringLut",
@@ -51,57 +62,89 @@ namespace SpaceSim
     void AtmosphereViewLuts::createTextures()
     {
         // =========================================================
-        // SKY-VIEW LUT
+        // RAW SKY-VIEW LUT
         // =========================================================
         //
-        // The Sky-View LUT is an angular atmosphere representation.
+        // This stores the actual directional atmosphere.
         //
-        // We also create a mip chain because the PBR pass will use
-        // higher mip levels as a first approximation of rough
-        // atmospheric reflections.
+        // AtmospherePass reads this directly.
         //
-        // 320 -> 160 -> 80 -> 40 -> 20 -> 10 -> 5 -> 2 -> 1
-        //
-        // therefore nine levels are sufficient.
-
-        constexpr GLint skyMipLevels =
-            9;
-
+        // Reflection filtering happens in a separate texture.
 
         glCreateTextures(
             GL_TEXTURE_2D,
             1,
             &m_skyViewTexture);
 
-
         glTextureStorage2D(
             m_skyViewTexture,
-            skyMipLevels,
+            1,
             GL_RGBA16F,
             SkyWidth,
             SkyHeight);
 
-
         glTextureParameteri(
             m_skyViewTexture,
             GL_TEXTURE_MIN_FILTER,
-            GL_LINEAR_MIPMAP_LINEAR);
-
+            GL_LINEAR);
 
         glTextureParameteri(
             m_skyViewTexture,
             GL_TEXTURE_MAG_FILTER,
             GL_LINEAR);
 
-
         glTextureParameteri(
             m_skyViewTexture,
             GL_TEXTURE_WRAP_S,
             GL_CLAMP_TO_EDGE);
 
-
         glTextureParameteri(
             m_skyViewTexture,
+            GL_TEXTURE_WRAP_T,
+            GL_CLAMP_TO_EDGE);
+
+
+        // =========================================================
+        // GGX REFLECTION ENVIRONMENT
+        // =========================================================
+        //
+        // Mip 0:
+        //
+        //     sharp atmosphere + ground
+        //
+        // Higher mips:
+        //
+        //     progressively rougher GGX-prefiltered reflections.
+
+        glCreateTextures(
+            GL_TEXTURE_2D,
+            1,
+            &m_skyReflectionTexture);
+
+        glTextureStorage2D(
+            m_skyReflectionTexture,
+            SkyMipLevels,
+            GL_RGBA16F,
+            SkyWidth,
+            SkyHeight);
+
+        glTextureParameteri(
+            m_skyReflectionTexture,
+            GL_TEXTURE_MIN_FILTER,
+            GL_LINEAR_MIPMAP_LINEAR);
+
+        glTextureParameteri(
+            m_skyReflectionTexture,
+            GL_TEXTURE_MAG_FILTER,
+            GL_LINEAR);
+
+        glTextureParameteri(
+            m_skyReflectionTexture,
+            GL_TEXTURE_WRAP_S,
+            GL_CLAMP_TO_EDGE);
+
+        glTextureParameteri(
+            m_skyReflectionTexture,
             GL_TEXTURE_WRAP_T,
             GL_CLAMP_TO_EDGE);
 
@@ -115,7 +158,6 @@ namespace SpaceSim
             1,
             &m_aerialScatteringTexture);
 
-
         glTextureStorage3D(
             m_aerialScatteringTexture,
             1,
@@ -124,30 +166,25 @@ namespace SpaceSim
             AerialHeight,
             AerialDepth);
 
-
         glTextureParameteri(
             m_aerialScatteringTexture,
             GL_TEXTURE_MIN_FILTER,
             GL_LINEAR);
-
 
         glTextureParameteri(
             m_aerialScatteringTexture,
             GL_TEXTURE_MAG_FILTER,
             GL_LINEAR);
 
-
         glTextureParameteri(
             m_aerialScatteringTexture,
             GL_TEXTURE_WRAP_S,
             GL_CLAMP_TO_EDGE);
 
-
         glTextureParameteri(
             m_aerialScatteringTexture,
             GL_TEXTURE_WRAP_T,
             GL_CLAMP_TO_EDGE);
-
 
         glTextureParameteri(
             m_aerialScatteringTexture,
@@ -160,7 +197,6 @@ namespace SpaceSim
             1,
             &m_aerialTransmittanceTexture);
 
-
         glTextureStorage3D(
             m_aerialTransmittanceTexture,
             1,
@@ -169,30 +205,25 @@ namespace SpaceSim
             AerialHeight,
             AerialDepth);
 
-
         glTextureParameteri(
             m_aerialTransmittanceTexture,
             GL_TEXTURE_MIN_FILTER,
             GL_LINEAR);
-
 
         glTextureParameteri(
             m_aerialTransmittanceTexture,
             GL_TEXTURE_MAG_FILTER,
             GL_LINEAR);
 
-
         glTextureParameteri(
             m_aerialTransmittanceTexture,
             GL_TEXTURE_WRAP_S,
             GL_CLAMP_TO_EDGE);
 
-
         glTextureParameteri(
             m_aerialTransmittanceTexture,
             GL_TEXTURE_WRAP_T,
             GL_CLAMP_TO_EDGE);
-
 
         glTextureParameteri(
             m_aerialTransmittanceTexture,
@@ -209,11 +240,9 @@ namespace SpaceSim
                 1,
                 &m_aerialTransmittanceTexture);
 
-
             m_aerialTransmittanceTexture =
                 0;
         }
-
 
         if (m_aerialScatteringTexture != 0)
         {
@@ -221,18 +250,25 @@ namespace SpaceSim
                 1,
                 &m_aerialScatteringTexture);
 
-
             m_aerialScatteringTexture =
                 0;
         }
 
+        if (m_skyReflectionTexture != 0)
+        {
+            glDeleteTextures(
+                1,
+                &m_skyReflectionTexture);
+
+            m_skyReflectionTexture =
+                0;
+        }
 
         if (m_skyViewTexture != 0)
         {
             glDeleteTextures(
                 1,
                 &m_skyViewTexture);
-
 
             m_skyViewTexture =
                 0;
@@ -250,11 +286,9 @@ namespace SpaceSim
         const AtmosphereParameters& parameters =
             *atmosphere.parameters;
 
-
         const glm::vec3 forward =
             glm::normalize(
                 camera.forward);
-
 
         const glm::vec3 right =
             glm::normalize(
@@ -262,13 +296,11 @@ namespace SpaceSim
                     forward,
                     camera.up));
 
-
         const glm::vec3 correctedUp =
             glm::normalize(
                 glm::cross(
                     right,
                     forward));
-
 
         const float tanHalfFov =
             std::tan(
@@ -277,117 +309,98 @@ namespace SpaceSim
                 *
                 0.5f);
 
-
         const float kmPerWorldUnit =
-            parameters.bottomRadiusKm
-            /
+            parameters.bottomRadiusKm /
             atmosphere.planetRadiusWorld;
-
 
         shader.setVec3(
             "cameraPositionWorld",
             camera.position);
 
-
         shader.setVec3(
             "cameraForward",
             forward);
-
 
         shader.setVec3(
             "cameraRight",
             right);
 
-
         shader.setVec3(
             "cameraUp",
             correctedUp);
-
 
         shader.setFloat(
             "tanHalfFov",
             tanHalfFov);
 
-
         shader.setFloat(
             "aspectRatio",
             aspectRatio);
-
 
         shader.setVec3(
             "planetCenterWorld",
             atmosphere.planetCenterWorld);
 
-
         shader.setFloat(
             "kmPerWorldUnit",
             kmPerWorldUnit);
-
 
         shader.setFloat(
             "bottomRadiusKm",
             parameters.bottomRadiusKm);
 
-
         shader.setFloat(
             "topRadiusKm",
             parameters.topRadiusKm);
-
 
         shader.setVec3(
             "rayleighScatteringPerKm",
             parameters.rayleighScatteringPerKm);
 
-
         shader.setFloat(
             "rayleighScaleHeightKm",
             parameters.rayleighScaleHeightKm);
-
 
         shader.setVec3(
             "mieScatteringPerKm",
             parameters.mieScatteringPerKm);
 
-
         shader.setVec3(
             "mieExtinctionPerKm",
             parameters.mieExtinctionPerKm);
-
 
         shader.setFloat(
             "mieScaleHeightKm",
             parameters.mieScaleHeightKm);
 
-
         shader.setFloat(
             "mieAnisotropy",
             parameters.mieAnisotropy);
-
 
         shader.setVec3(
             "ozoneAbsorptionPerKm",
             parameters.ozoneAbsorptionPerKm);
 
-
         shader.setFloat(
             "ozoneCenterHeightKm",
             parameters.ozoneCenterHeightKm);
 
-
         shader.setFloat(
             "ozoneHalfWidthKm",
             parameters.ozoneHalfWidthKm);
-
 
         shader.setVec3(
             "sunDirection",
             glm::normalize(
                 sun.direction));
 
-
         shader.setVec3(
             "sunRadiance",
             sun.radiance);
+
+        shader.setVec3(
+            "groundAlbedo",
+            parameters.groundAlbedo);
     }
 
 
@@ -402,17 +415,15 @@ namespace SpaceSim
             return;
         }
 
-
         const AtmosphereLuts& staticLuts =
             *atmosphere.luts;
 
 
         // =========================================================
-        // SKY-VIEW LUT
+        // 1. RAW SKY-VIEW LUT
         // =========================================================
 
         m_skyViewShader.use();
-
 
         setCommonUniforms(
             m_skyViewShader,
@@ -421,18 +432,14 @@ namespace SpaceSim
             sun,
             atmosphere);
 
-
         glBindTextureUnit(
             2,
             staticLuts.transmittance().id());
-
 
         glBindTextureUnit(
             3,
             staticLuts.multipleScattering().id());
 
-
-        // Compute shader writes only mip 0.
         glBindImageTexture(
             0,
             m_skyViewTexture,
@@ -442,37 +449,113 @@ namespace SpaceSim
             GL_WRITE_ONLY,
             GL_RGBA16F);
 
-
         glDispatchCompute(
             (SkyWidth + 7) / 8,
             (SkyHeight + 7) / 8,
             1);
-
 
         glMemoryBarrier(
             GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
             GL_TEXTURE_FETCH_BARRIER_BIT);
 
 
-        // Generate blurred versions for rough reflections.
+        // =========================================================
+        // 2. GGX-PREFILTERED REFLECTION ENVIRONMENT
+        // =========================================================
         //
-        // Later this should become a proper GGX convolution rather
-        // than a normal mipmap chain.
+        // Mip 0 gets the complete sharp environment:
+        //
+        //     atmosphere + lit ground
+        //
+        // Each higher mip integrates that environment using a
+        // progressively rougher GGX reflection lobe.
 
-        glGenerateTextureMipmap(
+        m_skyReflectionPrefilterShader.use();
+
+        setCommonUniforms(
+            m_skyReflectionPrefilterShader,
+            camera,
+            aspectRatio,
+            sun,
+            atmosphere);
+
+        glBindTextureUnit(
+            2,
             m_skyViewTexture);
 
+        glBindTextureUnit(
+            3,
+            staticLuts.transmittance().id());
+
+        glBindTextureUnit(
+            4,
+            staticLuts.skyIrradiance().id());
+
+        for (int mipLevel = 0;
+             mipLevel < SkyMipLevels;
+             ++mipLevel)
+        {
+            const int mipWidth =
+                std::max(
+                    1,
+                    SkyWidth >> mipLevel);
+
+            const int mipHeight =
+                std::max(
+                    1,
+                    SkyHeight >> mipLevel);
+
+            const float mipRoughness =
+                SkyMipLevels > 1
+                    ?
+                    static_cast<float>(
+                        mipLevel)
+                    /
+                    static_cast<float>(
+                        SkyMipLevels - 1)
+                    :
+                    0.0f;
+
+            m_skyReflectionPrefilterShader.setFloat(
+                "roughness",
+                mipRoughness);
+
+            // Mip 0 is just the exact environment.
+            //
+            // Higher mips use multiple GGX samples.
+            m_skyReflectionPrefilterShader.setInt(
+                "sampleCount",
+                mipLevel == 0
+                    ?
+                    1
+                    :
+                    64);
+
+            glBindImageTexture(
+                0,
+                m_skyReflectionTexture,
+                mipLevel,
+                GL_FALSE,
+                0,
+                GL_WRITE_ONLY,
+                GL_RGBA16F);
+
+            glDispatchCompute(
+                (mipWidth + 7) / 8,
+                (mipHeight + 7) / 8,
+                1);
+        }
 
         glMemoryBarrier(
+            GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |
             GL_TEXTURE_FETCH_BARRIER_BIT);
 
 
         // =========================================================
-        // AERIAL-PERSPECTIVE VOLUME
+        // 3. AERIAL-PERSPECTIVE VOLUME
         // =========================================================
 
         m_aerialPerspectiveShader.use();
-
 
         setCommonUniforms(
             m_aerialPerspectiveShader,
@@ -481,16 +564,13 @@ namespace SpaceSim
             sun,
             atmosphere);
 
-
         glBindTextureUnit(
             2,
             staticLuts.transmittance().id());
 
-
         glBindTextureUnit(
             3,
             staticLuts.multipleScattering().id());
-
 
         glBindImageTexture(
             0,
@@ -501,7 +581,6 @@ namespace SpaceSim
             GL_WRITE_ONLY,
             GL_RGBA16F);
 
-
         glBindImageTexture(
             1,
             m_aerialTransmittanceTexture,
@@ -511,12 +590,10 @@ namespace SpaceSim
             GL_WRITE_ONLY,
             GL_RGBA16F);
 
-
         glDispatchCompute(
             (AerialWidth + 3) / 4,
             (AerialHeight + 3) / 4,
             (AerialDepth + 3) / 4);
-
 
         glMemoryBarrier(
             GL_SHADER_IMAGE_ACCESS_BARRIER_BIT |

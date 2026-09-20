@@ -4,6 +4,7 @@
 
 #include <glad/gl.h>
 
+
 namespace SpaceSim
 {
     class PostProcessPass
@@ -13,20 +14,27 @@ namespace SpaceSim
 
         ~PostProcessPass();
 
+
         PostProcessPass(
             const PostProcessPass&) = delete;
+
 
         PostProcessPass& operator=(
             const PostProcessPass&) = delete;
 
+
         void render(
             GLuint hdrTexture,
             GLuint bloomTexture,
-            float exposure,
+            GLuint autoExposureTexture,
+            bool autoExposureEnabled,
+            float exposureCompensation,
             float bloomStrength);
+
 
     private:
         GlShader m_shader;
+
 
         GLuint m_vertexArray =
             0;

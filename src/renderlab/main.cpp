@@ -25,6 +25,7 @@
 #include <glm/geometric.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/trigonometric.hpp>
+#include <glm/vec4.hpp>
 
 #include <cmath>
 #include <exception>
@@ -75,14 +76,12 @@ int main()
 
 
         const float kmPerWorldUnit =
-            atmosphere.bottomRadiusKm
-            /
+            atmosphere.bottomRadiusKm /
             planetRadiusWorld;
 
 
         const float worldUnitsPerKm =
-            1.0f
-            /
+            1.0f /
             kmPerWorldUnit;
 
 
@@ -121,13 +120,15 @@ int main()
 
 
         renderer.setExposure(
-            0.7f);
+            1.0f);
 
 
         renderer.setBloomStrength(
-            0.0f);
+            0.045f);
 
-
+        renderer.setBloomThreshold(
+            8.0f);
+            
         bool atmosphericLightingEnabled =
             true;
 
@@ -145,7 +146,7 @@ int main()
 
 
         // =========================================================
-        // ENVIRONMENT
+        // TEST ENVIRONMENT / OLD IBL
         // =========================================================
 
         SpaceSim::GlTextureCube environmentMap(
@@ -163,9 +164,8 @@ int main()
         SpaceSim::EnvironmentLight environment;
 
 
-        // Disable the old fake/test IBL.
-        //
-        // We want atmospheric lighting to be easy to isolate.
+        // Disable the old artificial environment contribution while
+        // we're testing the physical atmosphere.
 
         environment.diffuseMultiplier =
         {
@@ -184,7 +184,7 @@ int main()
 
 
         // =========================================================
-        // STAR
+        // PRIMARY STAR
         // =========================================================
 
         SpaceSim::DirectionalLight sun;
@@ -206,8 +206,14 @@ int main()
         };
 
 
+        // DirectionalLight now also contains the visible stellar
+        // disk properties added in the previous step.
+        //
+        // We're leaving the default Sun-like apparent size for now.
+
+
         // =========================================================
-        // SHARED UNIT SPHERE MESH
+        // SHARED SPHERE MESH
         // =========================================================
 
         const SpaceSim::SphereMeshData sphereMeshData =
@@ -260,7 +266,7 @@ int main()
 
 
         // =========================================================
-        // MATTE LIGHTING BOX
+        // MATTE LIGHTING REFERENCE BOX
         // =========================================================
 
         constexpr float boxWidthWorld =
@@ -288,13 +294,20 @@ int main()
 
 
         constexpr float boxZWorld =
-            -0.080f;
+            -0.085f;
+
+
+        constexpr float boxXWorld =
+            -0.020f;
 
 
         const float boxSurfaceY =
             std::sqrt(
                 planetRadiusWorld *
                 planetRadiusWorld
+                -
+                boxXWorld *
+                boxXWorld
                 -
                 boxZWorld *
                 boxZWorld);
@@ -333,7 +346,7 @@ int main()
             glm::translate(
                 glm::mat4(1.0f),
                 glm::vec3(
-                    -0.010f,
+                    boxXWorld,
 
                     boxSurfaceY
                     +
@@ -366,83 +379,97 @@ int main()
 
 
         // =========================================================
-        // METALLIC REFLECTION SPHERE
+        // METALLIC MATERIAL TEST SPHERES
         // =========================================================
-        //
-        // This is our atmospheric-reflection reference object.
-        //
-        // It intentionally has:
-        //
-        // metallic = 1
-        // low roughness
-        //
-        // so the atmospheric Sky-View should be clearly visible.
 
-        constexpr float reflectionSphereX =
-            0.025f;
+        constexpr float reflectionSphereRadius =
+            0.0048f;
 
 
         constexpr float reflectionSphereZ =
-            -0.080f;
+            -0.090f;
 
 
-        constexpr float reflectionSphereRadius =
-            0.006f;
+        auto makeReflectionSphere =
+            [&](float xPosition,
+                float materialRoughness)
+            {
+                const float surfaceY =
+                    std::sqrt(
+                        planetRadiusWorld *
+                        planetRadiusWorld
+                        -
+                        xPosition *
+                        xPosition
+                        -
+                        reflectionSphereZ *
+                        reflectionSphereZ);
 
 
-        const float reflectionSphereSurfaceY =
-            std::sqrt(
-                planetRadiusWorld *
-                planetRadiusWorld
-                -
-                reflectionSphereX *
-                reflectionSphereX
-                -
-                reflectionSphereZ *
-                reflectionSphereZ);
+                SpaceSim::RenderObject sphere;
 
 
-        SpaceSim::RenderObject reflectionSphere;
+                sphere.mesh =
+                    &sphereMesh;
 
 
-        reflectionSphere.mesh =
-            &sphereMesh;
+                sphere.modelMatrix =
+                    glm::translate(
+                        glm::mat4(1.0f),
+                        glm::vec3(
+                            xPosition,
+
+                            surfaceY
+                            +
+                            reflectionSphereRadius
+                            +
+                            0.0010f,
+
+                            reflectionSphereZ))
+                    *
+                    glm::scale(
+                        glm::mat4(1.0f),
+                        glm::vec3(
+                            reflectionSphereRadius));
 
 
-        reflectionSphere.modelMatrix =
-            glm::translate(
-                glm::mat4(1.0f),
-                glm::vec3(
-                    reflectionSphereX,
-
-                    reflectionSphereSurfaceY
-                    +
-                    reflectionSphereRadius
-                    +
-                    0.0010f,
-
-                    reflectionSphereZ))
-            *
-            glm::scale(
-                glm::mat4(1.0f),
-                glm::vec3(
-                    reflectionSphereRadius));
+                sphere.material.baseColor =
+                {
+                    0.80f,
+                    0.80f,
+                    0.80f
+                };
 
 
-        reflectionSphere.material.baseColor =
-        {
-            0.80f,
-            0.80f,
-            0.80f
-        };
+                sphere.material.metallic =
+                    1.0f;
 
 
-        reflectionSphere.material.metallic =
-            1.0f;
+                sphere.material.roughness =
+                    materialRoughness;
 
 
-        reflectionSphere.material.roughness =
-            0.08f;
+                return
+                    sphere;
+            };
+
+
+        SpaceSim::RenderObject polishedSphere =
+            makeReflectionSphere(
+                0.008f,
+                0.05f);
+
+
+        SpaceSim::RenderObject mediumSphere =
+            makeReflectionSphere(
+                0.027f,
+                0.30f);
+
+
+        SpaceSim::RenderObject roughSphere =
+            makeReflectionSphere(
+                0.046f,
+                0.70f);
 
 
         // =========================================================
@@ -464,6 +491,61 @@ int main()
             1000.0f;
 
 
+        // =========================================================
+        // FREE-LOOK CAMERA SETTINGS
+        // =========================================================
+        //
+        // Hold RMB and move the mouse.
+        //
+        // The value here is radians per mouse pixel.
+        //
+        // 0.0025 rad ~= 0.14 degrees per pixel.
+
+        constexpr float mouseLookSensitivity =
+            0.0025f;
+
+
+        auto rotateDirectionAroundAxis =
+            [](
+                const glm::vec3& direction,
+                float angleRadians,
+                const glm::vec3& axis)
+            {
+                const glm::mat4 rotation =
+                    glm::rotate(
+                        glm::mat4(1.0f),
+                        angleRadians,
+                        glm::normalize(
+                            axis));
+
+
+                const glm::vec4 rotated =
+                    rotation
+                    *
+                    glm::vec4(
+                        direction,
+                        0.0f);
+
+
+                return
+                    glm::normalize(
+                        glm::vec3(
+                            rotated));
+            };
+
+
+        // =========================================================
+        // CAMERA PRESETS
+        // =========================================================
+        //
+        // 1 = near surface
+        // 2 = upper atmosphere
+        // 3 = orbit
+        //
+        // The preset resets both position and viewing direction.
+        //
+        // After selecting one, RMB free-look can rotate from there.
+
         int cameraMode =
             2;
 
@@ -474,7 +556,7 @@ int main()
                 if (cameraMode == 0)
                 {
                     // =============================================
-                    // SURFACE
+                    // SURFACE — ~1 km altitude
                     // =============================================
 
                     const float altitudeKm =
@@ -516,7 +598,7 @@ int main()
                 else if (cameraMode == 1)
                 {
                     // =============================================
-                    // UPPER ATMOSPHERE
+                    // UPPER ATMOSPHERE — ~40 km
                     // =============================================
 
                     const float altitudeKm =
@@ -609,7 +691,15 @@ int main()
 
 
         objects.push_back(
-            reflectionSphere);
+            polishedSphere);
+
+
+        objects.push_back(
+            mediumSphere);
+
+
+        objects.push_back(
+            roughSphere);
 
 
         // =========================================================
@@ -628,6 +718,10 @@ int main()
             false;
 
 
+        bool key4WasDown =
+            false;
+
+
         bool keyLWasDown =
             false;
 
@@ -636,13 +730,30 @@ int main()
             false;
 
 
+        bool rightMouseWasDown =
+            false;
+
+
+        // =========================================================
+        // CONTROLS
+        // =========================================================
+
         std::cout
             << "\nRendererLab controls:\n"
             << "  1 = surface camera\n"
             << "  2 = upper atmosphere camera\n"
             << "  3 = orbit camera\n"
+            << "  4 = look directly at primary star\n"
+            << "  Hold RMB + mouse = free look\n"
             << "  L = atmospheric sunlight + diffuse fill\n"
-            << "  R = atmospheric sky reflections\n\n";
+            << "  R = atmospheric reflections\n\n";
+
+
+        std::cout
+            << "Material spheres:\n"
+            << "  left   roughness = 0.05\n"
+            << "  middle roughness = 0.30\n"
+            << "  right  roughness = 0.70\n\n";
 
 
         std::cout
@@ -656,6 +767,10 @@ int main()
 
         while (window.processEvents())
         {
+            // =====================================================
+            // KEYBOARD INPUT
+            // =====================================================
+
             const bool* keyboard =
                 SDL_GetKeyboardState(
                     nullptr);
@@ -676,6 +791,11 @@ int main()
                     SDL_SCANCODE_3];
 
 
+            const bool key4Down =
+                keyboard[
+                    SDL_SCANCODE_4];
+
+
             const bool keyLDown =
                 keyboard[
                     SDL_SCANCODE_L];
@@ -687,7 +807,7 @@ int main()
 
 
             // =====================================================
-            // CAMERA HOTKEYS
+            // CAMERA PRESETS
             // =====================================================
 
             if (key1Down &&
@@ -724,7 +844,37 @@ int main()
 
 
             // =====================================================
-            // DIFFUSE / DIRECT ATMOSPHERIC LIGHTING
+            // LOOK DIRECTLY AT STAR
+            // =====================================================
+            //
+            // This doesn't move the camera.
+            //
+            // It only rotates it so the primary star should appear
+            // in the exact center of the screen.
+            //
+            // This is useful for distinguishing:
+            //
+            //     "star is off-screen"
+            //
+            // from:
+            //
+            //     "StarPass isn't rendering."
+
+            if (key4Down &&
+                !key4WasDown)
+            {
+                camera.forward =
+                    glm::normalize(
+                        sun.direction);
+
+
+                std::cout
+                    << "Camera: looking directly at primary star\n";
+            }
+
+
+            // =====================================================
+            // ATMOSPHERIC DIRECT + DIFFUSE LIGHTING
             // =====================================================
 
             if (keyLDown &&
@@ -752,7 +902,7 @@ int main()
 
 
             // =====================================================
-            // ATMOSPHERIC REFLECTIONS
+            // ATMOSPHERIC SPECULAR REFLECTIONS
             // =====================================================
 
             if (keyRDown &&
@@ -779,6 +929,159 @@ int main()
             }
 
 
+            // =====================================================
+            // RIGHT-MOUSE FREE LOOK
+            // =====================================================
+
+            const SDL_MouseButtonFlags mouseButtons =
+                SDL_GetMouseState(
+                    nullptr,
+                    nullptr);
+
+
+            const bool rightMouseDown =
+                (
+                    mouseButtons
+                    &
+                    SDL_BUTTON_RMASK
+                )
+                !=
+                0;
+
+
+            // Enter relative mouse mode when RMB is first pressed.
+            //
+            // SDL then hides/confines the cursor and gives us
+            // continuous relative movement instead of absolute
+            // cursor coordinates.
+
+            if (rightMouseDown &&
+                !rightMouseWasDown)
+            {
+                SDL_Window* mouseWindow =
+                    SDL_GetMouseFocus();
+
+
+                if (mouseWindow)
+                {
+                    if (!SDL_SetWindowRelativeMouseMode(
+                            mouseWindow,
+                            true))
+                    {
+                        std::cerr
+                            << "Could not enable relative mouse mode: "
+                            << SDL_GetError()
+                            << '\n';
+                    }
+                }
+            }
+
+
+            // Return the cursor to normal when RMB is released.
+
+            if (!rightMouseDown &&
+                rightMouseWasDown)
+            {
+                SDL_Window* mouseWindow =
+                    SDL_GetMouseFocus();
+
+
+                if (mouseWindow)
+                {
+                    if (!SDL_SetWindowRelativeMouseMode(
+                            mouseWindow,
+                            false))
+                    {
+                        std::cerr
+                            << "Could not disable relative mouse mode: "
+                            << SDL_GetError()
+                            << '\n';
+                    }
+                }
+            }
+
+
+            float mouseDeltaX =
+                0.0f;
+
+
+            float mouseDeltaY =
+                0.0f;
+
+
+            SDL_GetRelativeMouseState(
+                &mouseDeltaX,
+                &mouseDeltaY);
+
+
+            if (rightMouseDown)
+            {
+                // -------------------------------------------------
+                // YAW
+                // -------------------------------------------------
+                //
+                // Moving the mouse horizontally rotates around the
+                // camera's current up axis.
+
+                const float yawRadians =
+                    -mouseDeltaX *
+                    mouseLookSensitivity;
+
+
+                camera.forward =
+                    rotateDirectionAroundAxis(
+                        camera.forward,
+                        yawRadians,
+                        camera.up);
+
+
+                // -------------------------------------------------
+                // PITCH
+                // -------------------------------------------------
+
+                const glm::vec3 right =
+                    glm::normalize(
+                        glm::cross(
+                            camera.forward,
+                            camera.up));
+
+
+                const float pitchRadians =
+                    -mouseDeltaY *
+                    mouseLookSensitivity;
+
+
+                const glm::vec3 pitchedForward =
+                    rotateDirectionAroundAxis(
+                        camera.forward,
+                        pitchRadians,
+                        right);
+
+
+                // Prevent the camera from flipping upside down when
+                // looking almost exactly parallel to its up axis.
+
+                const float upAlignment =
+                    std::abs(
+                        glm::dot(
+                            pitchedForward,
+                            glm::normalize(
+                                camera.up)));
+
+
+                if (upAlignment <
+                    0.995f)
+                {
+                    camera.forward =
+                        pitchedForward;
+                }
+            }
+
+
+            // =====================================================
+            // STORE PREVIOUS INPUT STATE
+            // =====================================================
+
             key1WasDown =
                 key1Down;
 
@@ -791,6 +1094,10 @@ int main()
                 key3Down;
 
 
+            key4WasDown =
+                key4Down;
+
+
             keyLWasDown =
                 keyLDown;
 
@@ -799,8 +1106,12 @@ int main()
                 keyRDown;
 
 
+            rightMouseWasDown =
+                rightMouseDown;
+
+
             // =====================================================
-            // WINDOW
+            // WINDOW SIZE
             // =====================================================
 
             const int width =

@@ -1,9 +1,10 @@
 #include "renderer/atmosphere/AtmospherePass.h"
 
+#include "renderer/CameraRayReconstruction.h"
+
 #include "renderer/atmosphere/AtmosphereParameters.h"
 
 #include <glm/geometric.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
 
 #include <stdexcept>
 
@@ -225,19 +226,10 @@ namespace SpaceSim
             *atmosphere.parameters;
 
 
-        const glm::mat4 view =
-            camera.viewMatrix();
-
-
-        const glm::mat4 projection =
-            camera.projectionMatrix(
+        const glm::mat4 rayReconstructionMatrix =
+            makeCameraRayReconstructionMatrix(
+                camera,
                 aspectRatio);
-
-
-        const glm::mat4 inverseViewProjection =
-            glm::inverse(
-                projection *
-                view);
 
 
         const float kmPerWorldUnit =
@@ -273,9 +265,12 @@ namespace SpaceSim
         m_shader.use();
 
 
+        // The shader uniform keeps its old name for now, but the value
+        // is a stable analytic ray-reconstruction matrix rather than
+        // inverse(projection * view).
         m_shader.setMat4(
             "inverseViewProjection",
-            inverseViewProjection);
+            rayReconstructionMatrix);
 
 
         m_shader.setVec3(

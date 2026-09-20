@@ -1,38 +1,25 @@
 #version 450 core
 
-
 layout(location = 0)
 out vec4 outColor;
 
-
 layout(location = 1)
 out float outLinearDepth;
-
 
 in VS_OUT
 {
     vec3 worldPosition;
     vec3 worldNormal;
     vec2 texCoord;
-
     vec4 lightSpacePosition;
 } fsIn;
 
 
-// =============================================================
-// CAMERA / SUN
-// =============================================================
-
 uniform vec3 cameraPosition;
 
 uniform vec3 sunDirection;
-
 uniform vec3 sunRadiance;
 
-
-// =============================================================
-// NORMAL ENVIRONMENT IBL
-// =============================================================
 
 uniform samplerCube irradianceMap;
 
@@ -40,30 +27,26 @@ uniform samplerCube prefilteredEnvironmentMap;
 
 uniform sampler2D brdfLut;
 
-
 uniform vec3 environmentDiffuseMultiplier;
 
 uniform vec3 environmentSpecularMultiplier;
 
 
-// =============================================================
-// ATMOSPHERE
-// =============================================================
-
 uniform int atmosphereLightingEnabled;
 
 uniform int atmosphereSpecularEnabled;
-
 
 uniform sampler2D atmosphereTransmittanceLut;
 
 uniform sampler2D atmosphereSkyIrradianceLut;
 
+
+// SceneRenderer now binds the GGX-prefiltered local atmospheric
+// reflection texture here rather than the raw Sky-View LUT.
 uniform sampler2D atmosphereSkyViewLut;
 
 
 uniform vec3 atmospherePlanetCenterWorld;
-
 
 uniform float atmosphereKmPerWorldUnit;
 
@@ -72,31 +55,24 @@ uniform float atmosphereBottomRadiusKm;
 uniform float atmosphereTopRadiusKm;
 
 
-// Sky-View is currently a LOCAL probe around the camera/player.
+// Kept because SceneRenderer already supplies it.
 //
-// Objects outside this range fade away from this probe rather than
-// receiving obviously incorrect reflections from another location.
+// The actual ground contribution for reflections is now generated
+// by sky_reflection_prefilter.comp.
+uniform vec3 atmosphereGroundAlbedo;
+
 
 uniform float atmosphereSpecularProbeRangeWorld;
 
 
-// =============================================================
-// SHADOWS
-// =============================================================
-
 uniform sampler2D shadowMap;
 
-
-// =============================================================
-// MATERIAL
-// =============================================================
 
 uniform vec3 baseColor;
 
 uniform float metallic;
 
 uniform float roughness;
-
 
 uniform vec3 emissiveColor;
 
@@ -120,11 +96,9 @@ float distributionGGX(
         materialRoughness *
         materialRoughness;
 
-
     float a2 =
         a *
         a;
-
 
     float NdotH =
         max(
@@ -133,11 +107,9 @@ float distributionGGX(
                 H),
             0.0);
 
-
     float NdotH2 =
         NdotH *
         NdotH;
-
 
     float denominator =
         NdotH2 *
@@ -148,12 +120,10 @@ float distributionGGX(
         +
         1.0;
 
-
     denominator =
         PI *
         denominator *
         denominator;
-
 
     return
         a2 /
@@ -171,7 +141,6 @@ float geometrySchlickGGX(
         materialRoughness +
         1.0;
 
-
     float k =
         (
             r *
@@ -179,7 +148,6 @@ float geometrySchlickGGX(
         )
         /
         8.0;
-
 
     return
         NdotV /
@@ -208,14 +176,12 @@ float geometrySmith(
                 V),
             0.0);
 
-
     float NdotL =
         max(
             dot(
                 N,
                 L),
             0.0);
-
 
     return
         geometrySchlickGGX(
@@ -277,7 +243,7 @@ vec3 fresnelSchlickRoughness(
 
 
 // =============================================================
-// SHADOWS
+// SHADOW MAP
 // =============================================================
 
 float calculateShadow(
@@ -289,12 +255,10 @@ float calculateShadow(
         lightSpacePosition.xyz /
         lightSpacePosition.w;
 
-
     projected =
         projected *
         0.5 +
         0.5;
-
 
     if (projected.x < 0.0 ||
         projected.x > 1.0 ||
@@ -307,10 +271,8 @@ float calculateShadow(
             0.0;
     }
 
-
     float currentDepth =
         projected.z;
-
 
     float bias =
         max(
@@ -323,7 +285,6 @@ float calculateShadow(
             ),
             0.0005);
 
-
     vec2 texelSize =
         1.0 /
         vec2(
@@ -331,10 +292,8 @@ float calculateShadow(
                 shadowMap,
                 0));
 
-
     float shadow =
         0.0;
-
 
     for (int x = -1;
          x <= 1;
@@ -355,7 +314,6 @@ float calculateShadow(
                     *
                     texelSize).r;
 
-
             if (currentDepth - bias >
                 closestDepth)
             {
@@ -365,7 +323,6 @@ float calculateShadow(
         }
     }
 
-
     return
         shadow /
         9.0;
@@ -373,7 +330,7 @@ float calculateShadow(
 
 
 // =============================================================
-// ATMOSPHERE GROUND INTERSECTION
+// ATMOSPHERIC GROUND OCCLUSION
 // =============================================================
 
 bool atmosphereRayHitsGround(
@@ -384,12 +341,10 @@ bool atmosphereRayHitsGround(
         positionKm /
         atmosphereBottomRadiusKm;
 
-
     float b =
         dot(
             position,
             direction);
-
 
     float c =
         dot(
@@ -398,19 +353,16 @@ bool atmosphereRayHitsGround(
         -
         1.0;
 
-
     float discriminant =
         b *
         b -
         c;
-
 
     if (discriminant < 0.0)
     {
         return
             false;
     }
-
 
     float nearest =
         -b -
@@ -419,7 +371,6 @@ bool atmosphereRayHitsGround(
                 discriminant,
                 0.0));
 
-
     return
         nearest >
         0.000001;
@@ -427,7 +378,7 @@ bool atmosphereRayHitsGround(
 
 
 // =============================================================
-// TRANSMITTANCE
+// ATMOSPHERIC TRANSMITTANCE
 // =============================================================
 
 vec2 atmosphereTransmittanceUv(
@@ -438,11 +389,9 @@ vec2 atmosphereTransmittanceUv(
         length(
             positionKm);
 
-
     vec3 localUp =
         positionKm /
         radius;
-
 
     float mu =
         clamp(
@@ -451,7 +400,6 @@ vec2 atmosphereTransmittanceUv(
                 direction),
             -1.0,
             1.0);
-
 
     float H =
         sqrt(
@@ -463,7 +411,6 @@ vec2 atmosphereTransmittanceUv(
                 atmosphereBottomRadiusKm,
                 0.0));
 
-
     float rho =
         sqrt(
             max(
@@ -473,7 +420,6 @@ vec2 atmosphereTransmittanceUv(
                 atmosphereBottomRadiusKm *
                 atmosphereBottomRadiusKm,
                 0.0));
-
 
     float discriminant =
         radius *
@@ -487,7 +433,6 @@ vec2 atmosphereTransmittanceUv(
         atmosphereTopRadiusKm *
         atmosphereTopRadiusKm;
 
-
     float distanceToTop =
         -radius *
         mu
@@ -497,16 +442,13 @@ vec2 atmosphereTransmittanceUv(
                 discriminant,
                 0.0));
 
-
     float distanceMinimum =
         atmosphereTopRadiusKm -
         radius;
 
-
     float distanceMaximum =
         rho +
         H;
-
 
     float xMu =
         (
@@ -519,13 +461,11 @@ vec2 atmosphereTransmittanceUv(
             distanceMinimum,
             0.000001);
 
-
     float xRadius =
         rho /
         max(
             H,
             0.000001);
-
 
     vec2 parameterUv =
         clamp(
@@ -535,13 +475,11 @@ vec2 atmosphereTransmittanceUv(
             vec2(0.0),
             vec2(1.0));
 
-
     vec2 size =
         vec2(
             textureSize(
                 atmosphereTransmittanceLut,
                 0));
-
 
     return
         (
@@ -568,7 +506,6 @@ vec3 atmosphereSunTransmittance(
             vec3(1.0);
     }
 
-
     vec3 positionKm =
         (
             worldPosition -
@@ -577,31 +514,21 @@ vec3 atmosphereSunTransmittance(
         *
         atmosphereKmPerWorldUnit;
 
-
     float radiusKm =
         length(
             positionKm);
 
-
     if (radiusKm >=
-        atmosphereTopRadiusKm)
+        atmosphereTopRadiusKm ||
+        radiusKm <= 0.000001)
     {
         return
             vec3(1.0);
     }
-
-
-    if (radiusKm <= 0.000001)
-    {
-        return
-            vec3(1.0);
-    }
-
 
     vec3 localUp =
         positionKm /
         radiusKm;
-
 
     radiusKm =
         max(
@@ -609,11 +536,9 @@ vec3 atmosphereSunTransmittance(
             atmosphereBottomRadiusKm +
             0.001);
 
-
     positionKm =
         localUp *
         radiusKm;
-
 
     if (atmosphereRayHitsGround(
             positionKm,
@@ -623,18 +548,18 @@ vec3 atmosphereSunTransmittance(
             vec3(0.0);
     }
 
-
-    return textureLod(
-        atmosphereTransmittanceLut,
-        atmosphereTransmittanceUv(
-            positionKm,
-            directionToSun),
-        0.0).rgb;
+    return
+        textureLod(
+            atmosphereTransmittanceLut,
+            atmosphereTransmittanceUv(
+                positionKm,
+                directionToSun),
+            0.0).rgb;
 }
 
 
 // =============================================================
-// SKY IRRADIANCE
+// ATMOSPHERIC SKY IRRADIANCE
 // =============================================================
 
 vec2 atmosphereSkyIrradianceUv(
@@ -645,7 +570,6 @@ vec2 atmosphereSkyIrradianceUv(
         atmosphereTopRadiusKm -
         atmosphereBottomRadiusKm;
 
-
     float encodedSunMu =
         sign(
             sunMu)
@@ -654,28 +578,23 @@ vec2 atmosphereSkyIrradianceUv(
             abs(
                 sunMu));
 
-
     float u =
         encodedSunMu *
         0.5 +
         0.5;
 
-
     float altitudeFraction =
         clamp(
-            altitudeKm
-            /
+            altitudeKm /
             max(
                 atmosphereThicknessKm,
                 0.000001),
             0.0,
             1.0);
 
-
     float v =
         sqrt(
             altitudeFraction);
-
 
     vec2 parameterUv =
         clamp(
@@ -685,13 +604,11 @@ vec2 atmosphereSkyIrradianceUv(
             vec2(0.0),
             vec2(1.0));
 
-
     vec2 size =
         vec2(
             textureSize(
                 atmosphereSkyIrradianceLut,
                 0));
-
 
     return
         (
@@ -719,13 +636,11 @@ vec3 atmosphereSkyIrradiance(
             1.0,
             0.0);
 
-
     if (atmosphereLightingEnabled == 0)
     {
         return
             vec3(0.0);
     }
-
 
     vec3 positionKm =
         (
@@ -735,11 +650,9 @@ vec3 atmosphereSkyIrradiance(
         *
         atmosphereKmPerWorldUnit;
 
-
     float radiusKm =
         length(
             positionKm);
-
 
     if (radiusKm <= 0.000001)
     {
@@ -747,11 +660,9 @@ vec3 atmosphereSkyIrradiance(
             vec3(0.0);
     }
 
-
     localUp =
         positionKm /
         radiusKm;
-
 
     if (radiusKm >=
         atmosphereTopRadiusKm)
@@ -759,7 +670,6 @@ vec3 atmosphereSkyIrradiance(
         return
             vec3(0.0);
     }
-
 
     float altitudeKm =
         clamp(
@@ -769,7 +679,6 @@ vec3 atmosphereSkyIrradiance(
             atmosphereTopRadiusKm -
             atmosphereBottomRadiusKm);
 
-
     float sunMu =
         clamp(
             dot(
@@ -778,18 +687,18 @@ vec3 atmosphereSkyIrradiance(
             -1.0,
             1.0);
 
-
-    return textureLod(
-        atmosphereSkyIrradianceLut,
-        atmosphereSkyIrradianceUv(
-            altitudeKm,
-            sunMu),
-        0.0).rgb;
+    return
+        textureLod(
+            atmosphereSkyIrradianceLut,
+            atmosphereSkyIrradianceUv(
+                altitudeKm,
+                sunMu),
+            0.0).rgb;
 }
 
 
 // =============================================================
-// SKY-VIEW LUT MAPPING
+// REFLECTION TEXTURE MAPPING
 // =============================================================
 
 vec2 atmosphereUnitUvToSubUv(
@@ -823,7 +732,6 @@ vec2 atmosphereSkyViewUv(
         normalize(
             probeRelativeWorld);
 
-
     float viewHeightKm =
         max(
             length(
@@ -833,7 +741,6 @@ vec2 atmosphereSkyViewUv(
             atmosphereBottomRadiusKm +
             0.001);
 
-
     float viewZenithCosAngle =
         clamp(
             dot(
@@ -842,15 +749,9 @@ vec2 atmosphereSkyViewUv(
             -1.0,
             1.0);
 
-
-    // -------------------------------------------------------------
-    // SUN-RELATIVE AZIMUTH
-    // -------------------------------------------------------------
-
     vec3 normalizedSunDirection =
         normalize(
             sunDirection);
-
 
     vec3 sunTangent =
         normalizedSunDirection
@@ -860,11 +761,9 @@ vec2 atmosphereSkyViewUv(
             normalizedSunDirection,
             localUp);
 
-
     float sunTangentLength =
         length(
             sunTangent);
-
 
     if (sunTangentLength < 0.000001)
     {
@@ -884,7 +783,6 @@ vec2 atmosphereSkyViewUv(
                     0.0,
                     0.0);
 
-
         sunTangent =
             normalize(
                 cross(
@@ -897,7 +795,6 @@ vec2 atmosphereSkyViewUv(
             sunTangentLength;
     }
 
-
     float viewZenithSinAngle =
         sqrt(
             max(
@@ -906,13 +803,10 @@ vec2 atmosphereSkyViewUv(
                 viewZenithCosAngle,
                 0.0));
 
-
     float lightViewCosAngle =
         1.0;
 
-
-    if (viewZenithSinAngle >
-        0.000001)
+    if (viewZenithSinAngle > 0.000001)
     {
         vec3 viewTangent =
             (
@@ -924,7 +818,6 @@ vec2 atmosphereSkyViewUv(
             /
             viewZenithSinAngle;
 
-
         lightViewCosAngle =
             clamp(
                 dot(
@@ -933,11 +826,6 @@ vec2 atmosphereSkyViewUv(
                 -1.0,
                 1.0);
     }
-
-
-    // -------------------------------------------------------------
-    // HORIZON MAPPING
-    // -------------------------------------------------------------
 
     float horizonDistance =
         sqrt(
@@ -949,62 +837,44 @@ vec2 atmosphereSkyViewUv(
                 atmosphereBottomRadiusKm,
                 0.0));
 
-
     float cosBeta =
         clamp(
-            horizonDistance
-            /
+            horizonDistance /
             max(
                 viewHeightKm,
                 0.000001),
             0.0,
             1.0);
 
-
     float beta =
         acos(
             cosBeta);
-
 
     float zenithHorizonAngle =
         PI -
         beta;
 
-
     float viewZenithAngle =
         acos(
             viewZenithCosAngle);
 
-
     vec2 uv;
-
-
-    // Reflections directed into the sky should normally remain in
-    // this upper portion. The lower branch is retained so the
-    // parameterization remains identical to AtmospherePass.
 
     if (viewZenithAngle <=
         zenithHorizonAngle)
     {
         float coord =
-            viewZenithAngle
-            /
-            max(
-                zenithHorizonAngle,
-                0.000001);
-
-
-        coord =
             clamp(
-                coord,
+                viewZenithAngle /
+                max(
+                    zenithHorizonAngle,
+                    0.000001),
                 0.0,
                 1.0);
-
 
         coord =
             1.0 -
             coord;
-
 
         coord =
             sqrt(
@@ -1012,11 +882,9 @@ vec2 atmosphereSkyViewUv(
                     coord,
                     0.0));
 
-
         coord =
             1.0 -
             coord;
-
 
         uv.y =
             coord *
@@ -1025,55 +893,39 @@ vec2 atmosphereSkyViewUv(
     else
     {
         float coord =
-            (
-                viewZenithAngle
-                -
-                zenithHorizonAngle
-            )
-            /
-            max(
-                beta,
-                0.000001);
-
-
-        coord =
             clamp(
-                coord,
+                (
+                    viewZenithAngle -
+                    zenithHorizonAngle
+                )
+                /
+                max(
+                    beta,
+                    0.000001),
                 0.0,
                 1.0);
-
 
         coord =
             sqrt(
                 coord);
 
-
         uv.y =
             coord *
-            0.5
-            +
+            0.5 +
             0.5;
     }
 
-
     float azimuthCoord =
         -lightViewCosAngle *
-        0.5
-        +
+        0.5 +
         0.5;
 
-
-    azimuthCoord =
+    uv.x =
         sqrt(
             clamp(
                 azimuthCoord,
                 0.0,
                 1.0));
-
-
-    uv.x =
-        azimuthCoord;
-
 
     return
         atmosphereUnitUvToSubUv(
@@ -1086,7 +938,7 @@ vec2 atmosphereSkyViewUv(
 
 
 // =============================================================
-// LOCAL ATMOSPHERIC REFLECTION PROBE
+// LOCAL ATMOSPHERIC SPECULAR REFLECTION
 // =============================================================
 
 vec3 atmosphereSpecularRadiance(
@@ -1100,26 +952,17 @@ vec3 atmosphereSpecularRadiance(
             vec3(0.0);
     }
 
-
     vec3 probeRelativeWorld =
         cameraPosition -
         atmospherePlanetCenterWorld;
-
 
     vec3 probePositionKm =
         probeRelativeWorld *
         atmosphereKmPerWorldUnit;
 
-
     float probeRadiusKm =
         length(
             probePositionKm);
-
-
-    // Sky-View represents atmosphere around the player/camera.
-    //
-    // If the player is already in vacuum, don't pretend the
-    // atmospheric sky is a local reflection environment.
 
     if (probeRadiusKm >=
         atmosphereTopRadiusKm)
@@ -1128,39 +971,15 @@ vec3 atmosphereSpecularRadiance(
             vec3(0.0);
     }
 
-
-    if (probeRadiusKm <=
-        atmosphereBottomRadiusKm)
-    {
-        vec3 probeUp =
-            normalize(
-                probePositionKm);
-
-
-        probePositionKm =
-            probeUp *
-            (
-                atmosphereBottomRadiusKm +
-                0.001
-            );
-    }
-
-
-    // -------------------------------------------------------------
-    // LOCAL PROBE FADE
-    // -------------------------------------------------------------
-
     float objectDistance =
         length(
             worldPosition -
             cameraPosition);
 
-
     float probeRange =
         max(
             atmosphereSpecularProbeRangeWorld,
             0.000001);
-
 
     float probeWeight =
         1.0
@@ -1171,39 +990,16 @@ vec3 atmosphereSpecularRadiance(
             probeRange,
             objectDistance);
 
-
-    if (probeWeight <=
-        0.000001)
+    if (probeWeight <= 0.000001)
     {
         return
             vec3(0.0);
     }
 
-
-    // -------------------------------------------------------------
-    // GROUND OCCLUSION
-    // -------------------------------------------------------------
-    //
-    // Sky-View currently contains atmospheric radiance, not a
-    // proper planet/ground reflection environment.
-    //
-    // Therefore reflections pointing into the planet should NOT
-    // sample the sky probe.
-
-    if (atmosphereRayHitsGround(
-            probePositionKm,
-            reflectionDirection))
-    {
-        return
-            vec3(0.0);
-    }
-
-
-    vec2 skyUv =
+    vec2 reflectionUv =
         atmosphereSkyViewUv(
             reflectionDirection,
             probeRelativeWorld);
-
 
     float maxMip =
         float(
@@ -1213,10 +1009,14 @@ vec3 atmosphereSpecularRadiance(
             1);
 
 
-    // Ordinary mipmapping is only an approximation of roughness.
+    // This used to be temporarily:
     //
-    // Later:
-    // proper GGX-prefiltered atmospheric environment.
+    //     float mipLevel = 0.0;
+    //
+    // That diagnostic is now finished.
+    //
+    // The mip chain is actually GGX-prefiltered, so material
+    // roughness can correctly select the appropriate level.
 
     float mipLevel =
         clamp(
@@ -1225,16 +1025,14 @@ vec3 atmosphereSpecularRadiance(
             0.0,
             maxMip);
 
-
-    vec3 skyRadiance =
+    vec3 reflectedRadiance =
         textureLod(
             atmosphereSkyViewLut,
-            skyUv,
+            reflectionUv,
             mipLevel).rgb;
 
-
     return
-        skyRadiance *
+        reflectedRadiance *
         probeWeight;
 }
 
@@ -1251,28 +1049,23 @@ void main()
             0.04,
             1.0);
 
-
     vec3 N =
         normalize(
             fsIn.worldNormal);
-
 
     vec3 V =
         normalize(
             cameraPosition -
             fsIn.worldPosition);
 
-
     vec3 L =
         normalize(
             sunDirection);
-
 
     vec3 H =
         normalize(
             V +
             L);
-
 
     float NdotL =
         max(
@@ -1280,7 +1073,6 @@ void main()
                 N,
                 L),
             0.0);
-
 
     float NdotV =
         max(
@@ -1295,13 +1087,9 @@ void main()
     // =========================================================
 
     vec3 F0 =
-        vec3(
-            0.04);
-
-
-    F0 =
         mix(
-            F0,
+            vec3(
+                0.04),
             baseColor,
             metallic);
 
@@ -1316,14 +1104,12 @@ void main()
             H,
             materialRoughness);
 
-
     float G =
         geometrySmith(
             N,
             V,
             L,
             materialRoughness);
-
 
     vec3 F =
         fresnelSchlick(
@@ -1334,12 +1120,10 @@ void main()
                 0.0),
             F0);
 
-
     vec3 numerator =
         NDF *
         G *
         F;
-
 
     float denominator =
         max(
@@ -1348,15 +1132,12 @@ void main()
             NdotL,
             0.0001);
 
-
     vec3 specular =
         numerator /
         denominator;
 
-
     vec3 kS =
         F;
-
 
     vec3 kD =
         (
@@ -1370,12 +1151,10 @@ void main()
             metallic
         );
 
-
     vec3 diffuse =
         kD *
         baseColor /
         PI;
-
 
     float shadow =
         calculateShadow(
@@ -1383,17 +1162,14 @@ void main()
             N,
             L);
 
-
     vec3 sunTransmittance =
         atmosphereSunTransmittance(
             fsIn.worldPosition,
             L);
 
-
     vec3 sunlightAtObject =
         sunRadiance *
         sunTransmittance;
-
 
     vec3 directLighting =
         (
@@ -1412,7 +1188,7 @@ void main()
 
 
     // =========================================================
-    // STANDARD ENVIRONMENT IBL
+    // NORMAL ENVIRONMENT IBL
     // =========================================================
 
     vec3 environmentFresnel =
@@ -1421,10 +1197,8 @@ void main()
             F0,
             materialRoughness);
 
-
     vec3 environmentKS =
         environmentFresnel;
-
 
     vec3 environmentKD =
         (
@@ -1438,32 +1212,24 @@ void main()
             metallic
         );
 
-
     vec3 irradiance =
         texture(
             irradianceMap,
             N).rgb;
 
-
     irradiance *=
         environmentDiffuseMultiplier;
 
-
     vec3 indirectDiffuse =
-        environmentKD
-        *
-        baseColor
-        *
-        irradiance
-        /
+        environmentKD *
+        baseColor *
+        irradiance /
         PI;
-
 
     vec3 reflectionDirection =
         reflect(
             -V,
             N);
-
 
     float maxReflectionMip =
         float(
@@ -1472,18 +1238,15 @@ void main()
             -
             1);
 
-
     float reflectionMip =
         materialRoughness *
         maxReflectionMip;
-
 
     vec3 prefilteredRadiance =
         textureLod(
             prefilteredEnvironmentMap,
             reflectionDirection,
             reflectionMip).rgb;
-
 
     vec2 brdf =
         texture(
@@ -1492,10 +1255,8 @@ void main()
                 NdotV,
                 materialRoughness)).rg;
 
-
     vec3 indirectSpecular =
-        prefilteredRadiance
-        *
+        prefilteredRadiance *
         (
             environmentFresnel *
             brdf.x
@@ -1503,17 +1264,15 @@ void main()
             brdf.y
         );
 
-
     indirectSpecular *=
         environmentSpecularMultiplier;
 
 
     // =========================================================
-    // ATMOSPHERIC DIFFUSE SKY
+    // ATMOSPHERIC DIFFUSE SKY LIGHT
     // =========================================================
 
     vec3 atmosphericLocalUp;
-
 
     vec3 atmosphericSkyResponse =
         atmosphereSkyIrradiance(
@@ -1521,11 +1280,9 @@ void main()
             L,
             atmosphericLocalUp);
 
-
     float skyVisibility =
         clamp(
-            0.5
-            +
+            0.5 +
             0.5 *
             dot(
                 N,
@@ -1533,33 +1290,21 @@ void main()
             0.0,
             1.0);
 
-
     vec3 atmosphericSkyIrradiance =
-        atmosphericSkyResponse
-        *
+        atmosphericSkyResponse *
         sunRadiance;
 
-
     vec3 atmosphericDiffuse =
-        environmentKD
-        *
-        baseColor
-        *
-        atmosphericSkyIrradiance
-        /
-        PI
-        *
+        environmentKD *
+        baseColor *
+        atmosphericSkyIrradiance /
+        PI *
         skyVisibility;
 
 
     // =========================================================
-    // ATMOSPHERIC SPECULAR SKY
+    // ATMOSPHERIC SPECULAR ENVIRONMENT
     // =========================================================
-    //
-    // This is the new part.
-    //
-    // A glossy surface reflects the directional atmospheric sky
-    // rather than merely receiving its integrated diffuse energy.
 
     vec3 atmosphericReflectionRadiance =
         atmosphereSpecularRadiance(
@@ -1567,10 +1312,8 @@ void main()
             reflectionDirection,
             materialRoughness);
 
-
     vec3 atmosphericSpecular =
-        atmosphericReflectionRadiance
-        *
+        atmosphericReflectionRadiance *
         (
             environmentFresnel *
             brdf.x
@@ -1580,17 +1323,12 @@ void main()
 
 
     // =========================================================
-    // EMISSIVE
+    // FINAL
     // =========================================================
 
     vec3 emissiveRadiance =
         emissiveColor *
         emissiveStrength;
-
-
-    // =========================================================
-    // FINAL HDR
-    // =========================================================
 
     vec3 finalLighting =
         directLighting
@@ -1605,12 +1343,10 @@ void main()
         +
         emissiveRadiance;
 
-
     outColor =
         vec4(
             finalLighting,
             1.0);
-
 
     outLinearDepth =
         length(

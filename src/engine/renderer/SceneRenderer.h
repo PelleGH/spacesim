@@ -1,10 +1,12 @@
 #pragma once
 
+#include "renderer/AutoExposurePass.h"
 #include "renderer/BloomPass.h"
 #include "renderer/EnvironmentIbl.h"
 #include "renderer/EnvironmentPass.h"
 #include "renderer/RenderCamera.h"
 #include "renderer/RenderObject.h"
+#include "renderer/StarPass.h"
 
 #include "renderer/atmosphere/AtmosphereInstance.h"
 #include "renderer/atmosphere/AtmospherePass.h"
@@ -42,18 +44,38 @@ namespace SpaceSim
             const AtmosphereInstance* atmosphere = nullptr);
 
 
+        // This is now an exposure COMPENSATION value.
+        //
+        // 1.0 = neutral.
+        //
+        // Automatic exposure is calculated separately.
         float exposure() const
         {
             return
-                m_exposure;
+                m_exposureCompensation;
         }
 
 
         void setExposure(
-            float exposure)
+            float exposureCompensation)
         {
-            m_exposure =
-                exposure;
+            m_exposureCompensation =
+                exposureCompensation;
+        }
+
+
+        void setAutoExposureEnabled(
+            bool enabled)
+        {
+            m_autoExposureEnabled =
+                enabled;
+        }
+
+
+        bool autoExposureEnabled() const
+        {
+            return
+                m_autoExposureEnabled;
         }
 
 
@@ -73,11 +95,6 @@ namespace SpaceSim
         }
 
 
-        // Controls:
-        //
-        // - direct sunlight atmospheric attenuation
-        // - diffuse atmospheric sky fill
-
         void setAtmosphereLightingEnabled(
             bool enabled)
         {
@@ -92,10 +109,6 @@ namespace SpaceSim
                 m_atmosphereLightingEnabled;
         }
 
-
-        // Controls atmospheric Sky-View specular reflections.
-        //
-        // AtmospherePass itself remains enabled.
 
         void setAtmosphereSpecularEnabled(
             bool enabled)
@@ -127,8 +140,8 @@ namespace SpaceSim
         EnvironmentPass m_environmentPass;
 
 
-        // Generated once each frame and shared by both the PBR
-        // geometry pass and AtmospherePass.
+        StarPass m_starPass;
+
 
         AtmosphereViewLuts m_atmosphereViewLuts;
 
@@ -136,17 +149,26 @@ namespace SpaceSim
         AtmospherePass m_atmospherePass;
 
 
+        AutoExposurePass m_autoExposurePass;
+
+
         BloomPass m_bloomPass;
+
 
         PostProcessPass m_postProcess;
 
 
-        float m_exposure =
+        // Manual artistic adjustment on top of automatic exposure.
+        float m_exposureCompensation =
             1.0f;
 
 
         float m_bloomStrength =
             0.12f;
+
+
+        bool m_autoExposureEnabled =
+            true;
 
 
         bool m_atmosphereLightingEnabled =

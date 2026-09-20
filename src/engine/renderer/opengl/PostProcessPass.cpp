@@ -1,5 +1,6 @@
 #include "renderer/opengl/PostProcessPass.h"
 
+
 namespace SpaceSim
 {
     PostProcessPass::PostProcessPass()
@@ -20,6 +21,11 @@ namespace SpaceSim
         m_shader.setInt(
             "bloomTexture",
             1);
+
+
+        m_shader.setInt(
+            "autoExposureTexture",
+            2);
     }
 
 
@@ -30,6 +36,10 @@ namespace SpaceSim
             glDeleteVertexArrays(
                 1,
                 &m_vertexArray);
+
+
+            m_vertexArray =
+                0;
         }
     }
 
@@ -37,7 +47,9 @@ namespace SpaceSim
     void PostProcessPass::render(
         GLuint hdrTexture,
         GLuint bloomTexture,
-        float exposure,
+        GLuint autoExposureTexture,
+        bool autoExposureEnabled,
+        float exposureCompensation,
         float bloomStrength)
     {
         glDisable(
@@ -47,9 +59,18 @@ namespace SpaceSim
         m_shader.use();
 
 
+        m_shader.setInt(
+            "autoExposureEnabled",
+            autoExposureEnabled
+                ?
+                1
+                :
+                0);
+
+
         m_shader.setFloat(
-            "exposure",
-            exposure);
+            "exposureCompensation",
+            exposureCompensation);
 
 
         m_shader.setFloat(
@@ -65,6 +86,11 @@ namespace SpaceSim
         glBindTextureUnit(
             1,
             bloomTexture);
+
+
+        glBindTextureUnit(
+            2,
+            autoExposureTexture);
 
 
         glBindVertexArray(

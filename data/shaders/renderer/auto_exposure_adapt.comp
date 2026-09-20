@@ -1,0 +1,333 @@
+#version 450 core
+
+
+layout(
+    local_size_x = 1,
+    local_size_y = 1,
+    local_size_z = 1
+) in;
+
+
+layout(std430, binding = 0)
+readonly buffer HistogramBuffer
+{
+    uint histogram[257];
+};
+
+
+layout(binding = 0)
+uniform sampler2D previousExposureTexture;
+
+
+layout(
+    r32f,
+    binding = 0
+)
+writeonly uniform image2D outputExposure;
+
+
+uniform float minLogLuminance;
+
+uniform float maxLogLuminance;
+
+
+uniform float lowPercentile;
+
+uniform float highPercentile;
+
+
+uniform float keyValue;
+
+
+uniform float minimumExposure;
+
+uniform float maximumExposure;
+
+
+uniform float brighteningSpeed;
+
+uniform float darkeningSpeed;
+
+
+uniform float deltaTimeSeconds;
+
+
+void main()
+{
+    const uint validPixelCount =
+        histogram[256];
+
+
+    const float previousExposure =
+        texelFetch(
+            previousExposureTexture,
+            ivec2(
+                0,
+                0),
+            0).r;
+
+
+    // If literally nothing useful is visible, don't try to meter
+    // absolute black.
+    if (validPixelCount ==
+        0u)
+    {
+        imageStore(
+            outputExposure,
+            ivec2(
+                0,
+                0),
+            vec4(
+                previousExposure,
+                0.0,
+                0.0,
+                1.0));
+
+
+        return;
+    }
+
+
+    // =============================================================
+    // PERCENTILE RANGE
+    // =============================================================
+    //
+    // Example:
+    //
+    // low  = 5%
+    // high = 95%
+    //
+    // This prevents one tiny extremely bright star, or a few
+    // exceptionally dark samples, from controlling the whole image.
+
+    const float low =
+        clamp(
+            lowPercentile,
+            0.0,
+            1.0);
+
+
+    const float high =
+        clamp(
+            highPercentile,
+            low,
+            1.0);
+
+
+    const uint lowCut =
+        uint(
+            float(
+                validPixelCount)
+            *
+            low);
+
+
+    const uint highCut =
+        max(
+            lowCut +
+            1u,
+
+            uint(
+                float(
+                    validPixelCount)
+                *
+                high));
+
+
+    // =============================================================
+    // WEIGHTED LOG-LUMINANCE AVERAGE
+    // =============================================================
+
+    uint cumulativeCount =
+        0u;
+
+
+    float weightedLogLuminance =
+        0.0;
+
+
+    float includedCount =
+        0.0;
+
+
+    for (uint bin = 0u;
+         bin < 256u;
+         ++bin)
+    {
+        const uint binCount =
+            histogram[
+                bin];
+
+
+        if (binCount ==
+            0u)
+        {
+            continue;
+        }
+
+
+        const uint binStart =
+            cumulativeCount;
+
+
+        const uint binEnd =
+            cumulativeCount +
+            binCount;
+
+
+        cumulativeCount =
+            binEnd;
+
+
+        const uint includedStart =
+            max(
+                binStart,
+                lowCut);
+
+
+        const uint includedEnd =
+            min(
+                binEnd,
+                highCut);
+
+
+        if (includedEnd <=
+            includedStart)
+        {
+            continue;
+        }
+
+
+        const uint samplesIncluded =
+            includedEnd -
+            includedStart;
+
+
+        const float normalizedBinCenter =
+            (
+                float(bin)
+                +
+                0.5
+            )
+            /
+            256.0;
+
+
+        const float binLogLuminance =
+            mix(
+                minLogLuminance,
+                maxLogLuminance,
+                normalizedBinCenter);
+
+
+        weightedLogLuminance +=
+            binLogLuminance *
+            float(
+                samplesIncluded);
+
+
+        includedCount +=
+            float(
+                samplesIncluded);
+    }
+
+
+    if (includedCount <=
+        0.0)
+    {
+        imageStore(
+            outputExposure,
+            ivec2(
+                0,
+                0),
+            vec4(
+                previousExposure,
+                0.0,
+                0.0,
+                1.0));
+
+
+        return;
+    }
+
+
+    const float averageLogLuminance =
+        weightedLogLuminance /
+        includedCount;
+
+
+    const float averageLuminance =
+        exp2(
+            averageLogLuminance);
+
+
+    // =============================================================
+    // TARGET EXPOSURE
+    // =============================================================
+
+    const float targetExposure =
+        clamp(
+            keyValue /
+            max(
+                averageLuminance,
+                0.000001),
+
+            minimumExposure,
+
+            maximumExposure);
+
+
+    // =============================================================
+    // TEMPORAL ADAPTATION
+    // =============================================================
+
+    // target > previous:
+    //
+    // scene became darker
+    // -> increase exposure
+    //
+    // target < previous:
+    //
+    // scene became brighter
+    // -> decrease exposure
+
+    const float adaptationSpeed =
+        targetExposure >
+        previousExposure
+            ?
+            brighteningSpeed
+            :
+            darkeningSpeed;
+
+
+    const float adaptationAmount =
+        1.0
+        -
+        exp(
+            -adaptationSpeed *
+            max(
+                deltaTimeSeconds,
+                0.0));
+
+
+    const float adaptedExposure =
+        mix(
+            previousExposure,
+            targetExposure,
+            clamp(
+                adaptationAmount,
+                0.0,
+                1.0));
+
+
+    imageStore(
+        outputExposure,
+        ivec2(
+            0,
+            0),
+        vec4(
+            adaptedExposure,
+            0.0,
+            0.0,
+            1.0));
+}

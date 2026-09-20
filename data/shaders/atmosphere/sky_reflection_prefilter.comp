@@ -1,0 +1,1286 @@
+#version 450 core
+
+layout(
+    local_size_x = 8,
+    local_size_y = 8,
+    local_size_z = 1
+) in;
+
+layout(binding = 2)
+uniform sampler2D skyViewLut;
+
+layout(binding = 3)
+uniform sampler2D transmittanceLut;
+
+layout(binding = 4)
+uniform sampler2D skyIrradianceLut;
+
+layout(
+    rgba16f,
+    binding = 0
+)
+writeonly uniform image2D reflectionOutput;
+
+
+uniform vec3 cameraPositionWorld;
+uniform vec3 planetCenterWorld;
+
+uniform float kmPerWorldUnit;
+
+uniform float bottomRadiusKm;
+uniform float topRadiusKm;
+
+uniform vec3 sunDirection;
+uniform vec3 sunRadiance;
+
+uniform vec3 groundAlbedo;
+
+uniform float roughness;
+uniform int sampleCount;
+
+
+const float PI =
+    3.14159265359;
+
+
+// =============================================================
+// SPHERE INTERSECTION
+// =============================================================
+
+float nearestSphereIntersectionKm(
+    vec3 originKm,
+    vec3 direction,
+    float sphereRadiusKm)
+{
+    float scale =
+        bottomRadiusKm;
+
+    vec3 origin =
+        originKm /
+        scale;
+
+    float radius =
+        sphereRadiusKm /
+        scale;
+
+    float b =
+        dot(
+            origin,
+            direction);
+
+    float c =
+        dot(
+            origin,
+            origin)
+        -
+        radius *
+        radius;
+
+    float discriminant =
+        b *
+        b -
+        c;
+
+    if (discriminant < 0.0)
+    {
+        return
+            -1.0;
+    }
+
+    float root =
+        sqrt(
+            max(
+                discriminant,
+                0.0));
+
+    float tNearKm =
+        (
+            -b -
+            root
+        )
+        *
+        scale;
+
+    float tFarKm =
+        (
+            -b +
+            root
+        )
+        *
+        scale;
+
+    if (tNearKm > 0.000001)
+    {
+        return
+            tNearKm;
+    }
+
+    if (tFarKm > 0.000001)
+    {
+        return
+            tFarKm;
+    }
+
+    return
+        -1.0;
+}
+
+
+bool rayHitsGroundKm(
+    vec3 positionKm,
+    vec3 direction)
+{
+    return
+        nearestSphereIntersectionKm(
+            positionKm,
+            direction,
+            bottomRadiusKm)
+        >
+        0.000001;
+}
+
+
+// =============================================================
+// TRANSMITTANCE
+// =============================================================
+
+vec2 transmittanceUv(
+    vec3 positionKm,
+    vec3 direction)
+{
+    float radius =
+        length(
+            positionKm);
+
+    vec3 localUp =
+        positionKm /
+        radius;
+
+    float mu =
+        clamp(
+            dot(
+                localUp,
+                direction),
+            -1.0,
+            1.0);
+
+    float H =
+        sqrt(
+            max(
+                topRadiusKm *
+                topRadiusKm
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+    float rho =
+        sqrt(
+            max(
+                radius *
+                radius
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+    float discriminant =
+        radius *
+        radius *
+        (
+            mu *
+            mu -
+            1.0
+        )
+        +
+        topRadiusKm *
+        topRadiusKm;
+
+    float distanceToTop =
+        -radius *
+        mu
+        +
+        sqrt(
+            max(
+                discriminant,
+                0.0));
+
+    float distanceMinimum =
+        topRadiusKm -
+        radius;
+
+    float distanceMaximum =
+        rho +
+        H;
+
+    float xMu =
+        (
+            distanceToTop -
+            distanceMinimum
+        )
+        /
+        max(
+            distanceMaximum -
+            distanceMinimum,
+            0.000001);
+
+    float xRadius =
+        rho /
+        max(
+            H,
+            0.000001);
+
+    vec2 parameterUv =
+        clamp(
+            vec2(
+                xMu,
+                xRadius),
+            vec2(0.0),
+            vec2(1.0));
+
+    vec2 size =
+        vec2(
+            textureSize(
+                transmittanceLut,
+                0));
+
+    return
+        (
+            parameterUv *
+            (
+                size -
+                vec2(1.0)
+            )
+            +
+            vec2(0.5)
+        )
+        /
+        size;
+}
+
+
+// =============================================================
+// SKY IRRADIANCE
+// =============================================================
+
+vec2 skyIrradianceUv(
+    float altitudeKm,
+    float sunMu)
+{
+    float atmosphereThicknessKm =
+        topRadiusKm -
+        bottomRadiusKm;
+
+    float encodedSunMu =
+        sign(
+            sunMu)
+        *
+        sqrt(
+            abs(
+                sunMu));
+
+    float u =
+        encodedSunMu *
+        0.5 +
+        0.5;
+
+    float altitudeFraction =
+        clamp(
+            altitudeKm /
+            max(
+                atmosphereThicknessKm,
+                0.000001),
+            0.0,
+            1.0);
+
+    float v =
+        sqrt(
+            altitudeFraction);
+
+    vec2 parameterUv =
+        clamp(
+            vec2(
+                u,
+                v),
+            vec2(0.0),
+            vec2(1.0));
+
+    vec2 size =
+        vec2(
+            textureSize(
+                skyIrradianceLut,
+                0));
+
+    return
+        (
+            parameterUv *
+            (
+                size -
+                vec2(1.0)
+            )
+            +
+            vec2(0.5)
+        )
+        /
+        size;
+}
+
+
+// =============================================================
+// SKY-VIEW PARAMETERIZATION
+// =============================================================
+
+vec2 unitUvToSubUv(
+    vec2 uv,
+    vec2 textureSizePixels)
+{
+    return
+        (
+            clamp(
+                uv,
+                vec2(0.0),
+                vec2(1.0))
+            *
+            (
+                textureSizePixels -
+                vec2(1.0)
+            )
+            +
+            vec2(0.5)
+        )
+        /
+        textureSizePixels;
+}
+
+
+vec2 subUvToUnitUv(
+    vec2 uv,
+    vec2 textureSizePixels)
+{
+    vec2 result;
+
+    result.x =
+        textureSizePixels.x > 1.0
+            ?
+            (
+                uv.x *
+                textureSizePixels.x -
+                0.5
+            )
+            /
+            (
+                textureSizePixels.x -
+                1.0
+            )
+            :
+            0.5;
+
+    result.y =
+        textureSizePixels.y > 1.0
+            ?
+            (
+                uv.y *
+                textureSizePixels.y -
+                0.5
+            )
+            /
+            (
+                textureSizePixels.y -
+                1.0
+            )
+            :
+            0.5;
+
+    return
+        clamp(
+            result,
+            vec2(0.0),
+            vec2(1.0));
+}
+
+
+void uvToSkyViewParameters(
+    vec2 textureUv,
+    vec2 textureSizePixels,
+    float viewHeightKm,
+    out float viewZenithCosAngle,
+    out float lightViewCosAngle)
+{
+    vec2 uv =
+        subUvToUnitUv(
+            textureUv,
+            textureSizePixels);
+
+    float horizonDistance =
+        sqrt(
+            max(
+                viewHeightKm *
+                viewHeightKm
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+    float cosBeta =
+        clamp(
+            horizonDistance /
+            max(
+                viewHeightKm,
+                0.000001),
+            0.0,
+            1.0);
+
+    float beta =
+        acos(
+            cosBeta);
+
+    float zenithHorizonAngle =
+        PI -
+        beta;
+
+    float viewZenithAngle;
+
+    if (uv.y < 0.5)
+    {
+        float coord =
+            uv.y *
+            2.0;
+
+        coord =
+            1.0 -
+            coord;
+
+        coord *=
+            coord;
+
+        coord =
+            1.0 -
+            coord;
+
+        viewZenithAngle =
+            zenithHorizonAngle *
+            coord;
+    }
+    else
+    {
+        float coord =
+            uv.y *
+            2.0 -
+            1.0;
+
+        coord *=
+            coord;
+
+        viewZenithAngle =
+            zenithHorizonAngle
+            +
+            beta *
+            coord;
+    }
+
+    viewZenithCosAngle =
+        cos(
+            viewZenithAngle);
+
+    float azimuthCoord =
+        uv.x *
+        uv.x;
+
+    lightViewCosAngle =
+        clamp(
+            1.0 -
+            2.0 *
+            azimuthCoord,
+            -1.0,
+            1.0);
+}
+
+
+vec2 directionToSkyViewUv(
+    vec3 direction,
+    float viewHeightKm)
+{
+    direction =
+        normalize(
+            direction);
+
+    float viewZenithCosAngle =
+        clamp(
+            direction.z,
+            -1.0,
+            1.0);
+
+    float viewZenithAngle =
+        acos(
+            viewZenithCosAngle);
+
+    float horizontalLength =
+        length(
+            direction.xy);
+
+    float lightViewCosAngle =
+        1.0;
+
+    if (horizontalLength > 0.000001)
+    {
+        lightViewCosAngle =
+            clamp(
+                direction.x /
+                horizontalLength,
+                -1.0,
+                1.0);
+    }
+
+    float horizonDistance =
+        sqrt(
+            max(
+                viewHeightKm *
+                viewHeightKm
+                -
+                bottomRadiusKm *
+                bottomRadiusKm,
+                0.0));
+
+    float cosBeta =
+        clamp(
+            horizonDistance /
+            max(
+                viewHeightKm,
+                0.000001),
+            0.0,
+            1.0);
+
+    float beta =
+        acos(
+            cosBeta);
+
+    float zenithHorizonAngle =
+        PI -
+        beta;
+
+    vec2 uv;
+
+    if (viewZenithAngle <=
+        zenithHorizonAngle)
+    {
+        float coord =
+            clamp(
+                viewZenithAngle /
+                max(
+                    zenithHorizonAngle,
+                    0.000001),
+                0.0,
+                1.0);
+
+        coord =
+            1.0 -
+            coord;
+
+        coord =
+            sqrt(
+                max(
+                    coord,
+                    0.0));
+
+        coord =
+            1.0 -
+            coord;
+
+        uv.y =
+            coord *
+            0.5;
+    }
+    else
+    {
+        float coord =
+            clamp(
+                (
+                    viewZenithAngle -
+                    zenithHorizonAngle
+                )
+                /
+                max(
+                    beta,
+                    0.000001),
+                0.0,
+                1.0);
+
+        coord =
+            sqrt(
+                coord);
+
+        uv.y =
+            coord *
+            0.5 +
+            0.5;
+    }
+
+    float azimuthCoord =
+        -lightViewCosAngle *
+        0.5 +
+        0.5;
+
+    uv.x =
+        sqrt(
+            clamp(
+                azimuthCoord,
+                0.0,
+                1.0));
+
+    return
+        unitUvToSubUv(
+            uv,
+            vec2(
+                textureSize(
+                    skyViewLut,
+                    0)));
+}
+
+
+vec3 sampleSkyView(
+    vec3 direction,
+    float viewHeightKm)
+{
+    return
+        textureLod(
+            skyViewLut,
+            directionToSkyViewUv(
+                direction,
+                viewHeightKm),
+            0.0).rgb;
+}
+
+
+// =============================================================
+// GROUND REFLECTION
+// =============================================================
+
+vec3 groundRadiance(
+    vec3 probePositionKm,
+    vec3 reflectionDirection,
+    vec3 directionToSun)
+{
+    float groundDistanceKm =
+        nearestSphereIntersectionKm(
+            probePositionKm,
+            reflectionDirection,
+            bottomRadiusKm);
+
+    if (groundDistanceKm <= 0.000001)
+    {
+        return
+            vec3(0.0);
+    }
+
+    vec3 groundPositionKm =
+        probePositionKm
+        +
+        reflectionDirection *
+        groundDistanceKm;
+
+    vec3 groundNormal =
+        normalize(
+            groundPositionKm);
+
+    vec3 lightingPositionKm =
+        groundNormal *
+        (
+            bottomRadiusKm +
+            0.001
+        );
+
+    float NdotL =
+        max(
+            dot(
+                groundNormal,
+                directionToSun),
+            0.0);
+
+    vec3 directIrradiance =
+        vec3(0.0);
+
+    if (NdotL > 0.0 &&
+        !rayHitsGroundKm(
+            lightingPositionKm,
+            directionToSun))
+    {
+        vec3 sunTransmittance =
+            textureLod(
+                transmittanceLut,
+                transmittanceUv(
+                    lightingPositionKm,
+                    directionToSun),
+                0.0).rgb;
+
+        directIrradiance =
+            sunRadiance *
+            sunTransmittance *
+            NdotL;
+    }
+
+    float sunMu =
+        clamp(
+            dot(
+                groundNormal,
+                directionToSun),
+            -1.0,
+            1.0);
+
+    vec3 skyIrradiance =
+        textureLod(
+            skyIrradianceLut,
+            skyIrradianceUv(
+                0.001,
+                sunMu),
+            0.0).rgb
+        *
+        sunRadiance;
+
+    vec3 surfaceRadiance =
+        groundAlbedo *
+        (
+            directIrradiance +
+            skyIrradiance
+        )
+        /
+        PI;
+
+
+    // The light from the ground still travels through the
+    // atmosphere on the way back to the reflection probe.
+
+    vec3 directionToProbe =
+        normalize(
+            probePositionKm -
+            lightingPositionKm);
+
+    vec3 groundToSpaceTransmittance =
+        textureLod(
+            transmittanceLut,
+            transmittanceUv(
+                lightingPositionKm,
+                directionToProbe),
+            0.0).rgb;
+
+    vec3 probeToSpaceTransmittance =
+        textureLod(
+            transmittanceLut,
+            transmittanceUv(
+                probePositionKm,
+                directionToProbe),
+            0.0).rgb;
+
+    vec3 groundToProbeTransmittance =
+        clamp(
+            groundToSpaceTransmittance /
+            max(
+                probeToSpaceTransmittance,
+                vec3(0.0001)),
+            vec3(0.0),
+            vec3(1.0));
+
+    return
+        surfaceRadiance *
+        groundToProbeTransmittance;
+}
+
+
+vec3 completeEnvironmentRadiance(
+    vec3 direction,
+    vec3 probePositionKm,
+    vec3 directionToSun,
+    float viewHeightKm)
+{
+    vec3 radiance =
+        sampleSkyView(
+            direction,
+            viewHeightKm);
+
+    if (rayHitsGroundKm(
+            probePositionKm,
+            direction))
+    {
+        radiance +=
+            groundRadiance(
+                probePositionKm,
+                direction,
+                directionToSun);
+    }
+
+    return
+        radiance;
+}
+
+
+// =============================================================
+// HAMMERSLEY SEQUENCE
+// =============================================================
+//
+// Gives us evenly-distributed deterministic sample points.
+
+uint radicalInverseBits(
+    uint bits)
+{
+    bits =
+        (
+            bits << 16u
+        )
+        |
+        (
+            bits >> 16u
+        );
+
+    bits =
+        (
+            (
+                bits &
+                0x55555555u
+            )
+            <<
+            1u
+        )
+        |
+        (
+            (
+                bits &
+                0xAAAAAAAAu
+            )
+            >>
+            1u
+        );
+
+    bits =
+        (
+            (
+                bits &
+                0x33333333u
+            )
+            <<
+            2u
+        )
+        |
+        (
+            (
+                bits &
+                0xCCCCCCCCu
+            )
+            >>
+            2u
+        );
+
+    bits =
+        (
+            (
+                bits &
+                0x0F0F0F0Fu
+            )
+            <<
+            4u
+        )
+        |
+        (
+            (
+                bits &
+                0xF0F0F0F0u
+            )
+            >>
+            4u
+        );
+
+    bits =
+        (
+            (
+                bits &
+                0x00FF00FFu
+            )
+            <<
+            8u
+        )
+        |
+        (
+            (
+                bits &
+                0xFF00FF00u
+            )
+            >>
+            8u
+        );
+
+    return
+        bits;
+}
+
+
+float radicalInverseVdC(
+    uint bits)
+{
+    return
+        float(
+            radicalInverseBits(
+                bits))
+        *
+        2.3283064365386963e-10;
+}
+
+
+vec2 hammersley(
+    uint i,
+    uint count)
+{
+    return
+        vec2(
+            float(i) /
+            float(count),
+
+            radicalInverseVdC(
+                i));
+}
+
+
+// =============================================================
+// GGX IMPORTANCE SAMPLING
+// =============================================================
+
+vec3 importanceSampleGGX(
+    vec2 Xi,
+    vec3 N,
+    float materialRoughness)
+{
+    float alpha =
+        materialRoughness *
+        materialRoughness;
+
+    float alpha2 =
+        alpha *
+        alpha;
+
+    float phi =
+        2.0 *
+        PI *
+        Xi.x;
+
+    float cosTheta =
+        sqrt(
+            (
+                1.0 -
+                Xi.y
+            )
+            /
+            max(
+                1.0 +
+                (
+                    alpha2 -
+                    1.0
+                )
+                *
+                Xi.y,
+                0.000001));
+
+    float sinTheta =
+        sqrt(
+            max(
+                1.0 -
+                cosTheta *
+                cosTheta,
+                0.0));
+
+    vec3 Ht =
+        vec3(
+            cos(phi) *
+            sinTheta,
+
+            sin(phi) *
+            sinTheta,
+
+            cosTheta);
+
+    vec3 reference =
+        abs(
+            N.z)
+        <
+        0.999
+            ?
+            vec3(
+                0.0,
+                0.0,
+                1.0)
+            :
+            vec3(
+                1.0,
+                0.0,
+                0.0);
+
+    vec3 tangent =
+        normalize(
+            cross(
+                reference,
+                N));
+
+    vec3 bitangent =
+        cross(
+            N,
+            tangent);
+
+    return
+        normalize(
+            tangent *
+            Ht.x
+            +
+            bitangent *
+            Ht.y
+            +
+            N *
+            Ht.z);
+}
+
+
+// =============================================================
+// MAIN
+// =============================================================
+
+void main()
+{
+    ivec2 outputSize =
+        imageSize(
+            reflectionOutput);
+
+    ivec2 pixel =
+        ivec2(
+            gl_GlobalInvocationID.xy);
+
+    if (pixel.x >= outputSize.x ||
+        pixel.y >= outputSize.y)
+    {
+        return;
+    }
+
+    vec2 textureUv =
+        (
+            vec2(
+                pixel)
+            +
+            vec2(0.5)
+        )
+        /
+        vec2(
+            outputSize);
+
+
+    // =========================================================
+    // CANONICAL LOCAL PLANET FRAME
+    // =========================================================
+    //
+    // The atmosphere is rotationally symmetric around the local
+    // surface normal, so the reflection prefilter can operate with
+    // the probe placed on +Z.
+
+    vec3 actualProbePositionKm =
+        (
+            cameraPositionWorld -
+            planetCenterWorld
+        )
+        *
+        kmPerWorldUnit;
+
+    float viewHeightKm =
+        max(
+            length(
+                actualProbePositionKm),
+            bottomRadiusKm +
+            0.001);
+
+    vec3 probePositionKm =
+        vec3(
+            0.0,
+            0.0,
+            viewHeightKm);
+
+    vec3 actualLocalUp =
+        normalize(
+            actualProbePositionKm);
+
+    vec3 normalizedSunDirection =
+        normalize(
+            sunDirection);
+
+    float sunZenithCosAngle =
+        clamp(
+            dot(
+                actualLocalUp,
+                normalizedSunDirection),
+            -1.0,
+            1.0);
+
+    float sunHorizontal =
+        sqrt(
+            max(
+                1.0 -
+                sunZenithCosAngle *
+                sunZenithCosAngle,
+                0.0));
+
+    vec3 directionToSun =
+        normalize(
+            vec3(
+                sunHorizontal,
+                0.0,
+                sunZenithCosAngle));
+
+
+    // =========================================================
+    // OUTPUT TEXEL -> REFLECTION DIRECTION
+    // =========================================================
+
+    float viewZenithCosAngle;
+
+    float lightViewCosAngle;
+
+    uvToSkyViewParameters(
+        textureUv,
+        vec2(
+            outputSize),
+        viewHeightKm,
+        viewZenithCosAngle,
+        lightViewCosAngle);
+
+    float viewZenithSinAngle =
+        sqrt(
+            max(
+                1.0 -
+                viewZenithCosAngle *
+                viewZenithCosAngle,
+                0.0));
+
+    float lightViewSinAngle =
+        sqrt(
+            max(
+                1.0 -
+                lightViewCosAngle *
+                lightViewCosAngle,
+                0.0));
+
+    vec3 reflectionDirection =
+        normalize(
+            vec3(
+                viewZenithSinAngle *
+                lightViewCosAngle,
+
+                viewZenithSinAngle *
+                lightViewSinAngle,
+
+                viewZenithCosAngle));
+
+
+    // =========================================================
+    // MIP 0
+    // =========================================================
+    //
+    // No convolution. Store the exact complete environment.
+
+    if (roughness <= 0.0001 ||
+        sampleCount <= 1)
+    {
+        vec3 radiance =
+            completeEnvironmentRadiance(
+                reflectionDirection,
+                probePositionKm,
+                directionToSun,
+                viewHeightKm);
+
+        imageStore(
+            reflectionOutput,
+            pixel,
+            vec4(
+                radiance,
+                1.0));
+
+        return;
+    }
+
+
+    // =========================================================
+    // GGX CONVOLUTION
+    // =========================================================
+
+    vec3 V =
+        reflectionDirection;
+
+    vec3 N =
+        reflectionDirection;
+
+    vec3 accumulatedRadiance =
+        vec3(0.0);
+
+    float totalWeight =
+        0.0;
+
+    uint count =
+        uint(
+            max(
+                sampleCount,
+                1));
+
+    for (uint i = 0u;
+         i < count;
+         ++i)
+    {
+        vec2 Xi =
+            hammersley(
+                i,
+                count);
+
+        vec3 H =
+            importanceSampleGGX(
+                Xi,
+                N,
+                roughness);
+
+        vec3 L =
+            normalize(
+                2.0 *
+                dot(
+                    V,
+                    H)
+                *
+                H
+                -
+                V);
+
+        float NdotL =
+            max(
+                dot(
+                    N,
+                    L),
+                0.0);
+
+        if (NdotL > 0.0)
+        {
+            vec3 radiance =
+                completeEnvironmentRadiance(
+                    L,
+                    probePositionKm,
+                    directionToSun,
+                    viewHeightKm);
+
+            accumulatedRadiance +=
+                radiance *
+                NdotL;
+
+            totalWeight +=
+                NdotL;
+        }
+    }
+
+    vec3 result =
+        accumulatedRadiance /
+        max(
+            totalWeight,
+            0.000001);
+
+    imageStore(
+        reflectionOutput,
+        pixel,
+        vec4(
+            result,
+            1.0));
+}

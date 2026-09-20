@@ -3,15 +3,21 @@
 #include <algorithm>
 #include <stdexcept>
 
+
 namespace SpaceSim
 {
     BloomPass::BloomPass()
         : m_extractShader(
               "data/shaders/renderer/fullscreen.vert",
               "data/shaders/renderer/bloom_extract.frag"),
-          m_blurShader(
+
+          m_downsampleShader(
               "data/shaders/renderer/fullscreen.vert",
-              "data/shaders/renderer/bloom_blur.frag")
+              "data/shaders/renderer/bloom_downsample.frag"),
+
+          m_upsampleShader(
+              "data/shaders/renderer/fullscreen.vert",
+              "data/shaders/renderer/bloom_upsample.frag")
     {
         glCreateVertexArrays(
             1,
@@ -23,7 +29,12 @@ namespace SpaceSim
             0);
 
 
-        m_blurShader.setInt(
+        m_downsampleShader.setInt(
+            "sourceTexture",
+            0);
+
+
+        m_upsampleShader.setInt(
             "sourceTexture",
             0);
     }
@@ -39,6 +50,10 @@ namespace SpaceSim
             glDeleteVertexArrays(
                 1,
                 &m_vertexArray);
+
+
+            m_vertexArray =
+                0;
         }
     }
 
@@ -46,33 +61,36 @@ namespace SpaceSim
     void BloomPass::destroyTargets()
     {
         glDeleteTextures(
-            2,
-            m_textures);
+            BloomLevelCount,
+            m_textures.data());
 
 
         glDeleteFramebuffers(
-            2,
-            m_framebuffers);
+            BloomLevelCount,
+            m_framebuffers.data());
 
 
-        m_textures[0] =
+        m_textures.fill(
+            0);
+
+
+        m_framebuffers.fill(
+            0);
+
+
+        m_levelWidths.fill(
+            0);
+
+
+        m_levelHeights.fill(
+            0);
+
+
+        m_sourceWidth =
             0;
 
-        m_textures[1] =
-            0;
 
-
-        m_framebuffers[0] =
-            0;
-
-        m_framebuffers[1] =
-            0;
-
-
-        m_width =
-            0;
-
-        m_height =
+        m_sourceHeight =
             0;
     }
 
@@ -81,24 +99,15 @@ namespace SpaceSim
         int width,
         int height)
     {
-        // Bloom does not need full screen resolution.
-        //
-        // Half resolution makes it substantially cheaper and
-        // naturally gives us a slightly softer result.
-        const int bloomWidth =
-            std::max(
-                1,
-                width / 2);
+        if (width <= 0 ||
+            height <= 0)
+        {
+            return;
+        }
 
 
-        const int bloomHeight =
-            std::max(
-                1,
-                height / 2);
-
-
-        if (bloomWidth == m_width &&
-            bloomHeight == m_height)
+        if (width == m_sourceWidth &&
+            height == m_sourceHeight)
         {
             return;
         }
@@ -107,75 +116,113 @@ namespace SpaceSim
         destroyTargets();
 
 
-        m_width =
-            bloomWidth;
+        m_sourceWidth =
+            width;
 
-        m_height =
-            bloomHeight;
+
+        m_sourceHeight =
+            height;
 
 
         glCreateTextures(
             GL_TEXTURE_2D,
-            2,
-            m_textures);
+            BloomLevelCount,
+            m_textures.data());
 
 
         glCreateFramebuffers(
-            2,
-            m_framebuffers);
+            BloomLevelCount,
+            m_framebuffers.data());
 
 
-        for (int i = 0;
-             i < 2;
-             ++i)
+        // =========================================================
+        // BUILD BLOOM PYRAMID
+        // =========================================================
+        //
+        // Level 0 starts at half screen resolution.
+        //
+        // Every later level halves each dimension again.
+        //
+        // At 1280x720 this becomes approximately:
+        //
+        //     640x360
+        //     320x180
+        //     160x90
+        //      80x45
+        //      40x22
+        //      20x11
+
+        int levelWidth =
+            std::max(
+                1,
+                width / 2);
+
+
+        int levelHeight =
+            std::max(
+                1,
+                height / 2);
+
+
+        for (int level = 0;
+             level < BloomLevelCount;
+             ++level)
         {
+            m_levelWidths[level] =
+                levelWidth;
+
+
+            m_levelHeights[level] =
+                levelHeight;
+
+
             glTextureStorage2D(
-                m_textures[i],
+                m_textures[level],
                 1,
                 GL_RGBA16F,
-                m_width,
-                m_height);
+                levelWidth,
+                levelHeight);
 
 
             glTextureParameteri(
-                m_textures[i],
+                m_textures[level],
                 GL_TEXTURE_MIN_FILTER,
                 GL_LINEAR);
 
 
             glTextureParameteri(
-                m_textures[i],
+                m_textures[level],
                 GL_TEXTURE_MAG_FILTER,
                 GL_LINEAR);
 
 
             glTextureParameteri(
-                m_textures[i],
+                m_textures[level],
                 GL_TEXTURE_WRAP_S,
                 GL_CLAMP_TO_EDGE);
 
 
             glTextureParameteri(
-                m_textures[i],
+                m_textures[level],
                 GL_TEXTURE_WRAP_T,
                 GL_CLAMP_TO_EDGE);
 
 
             glNamedFramebufferTexture(
-                m_framebuffers[i],
+                m_framebuffers[level],
                 GL_COLOR_ATTACHMENT0,
-                m_textures[i],
+                m_textures[level],
                 0);
 
 
             glNamedFramebufferDrawBuffer(
-                m_framebuffers[i],
+                m_framebuffers[level],
                 GL_COLOR_ATTACHMENT0);
 
 
             const GLenum status =
                 glCheckNamedFramebufferStatus(
-                    m_framebuffers[i],
+                    m_framebuffers[level],
                     GL_FRAMEBUFFER);
 
 
@@ -185,6 +232,18 @@ namespace SpaceSim
                 throw std::runtime_error(
                     "Bloom framebuffer is incomplete.");
             }
+
+
+            levelWidth =
+                std::max(
+                    1,
+                    levelWidth / 2);
+
+
+            levelHeight =
+                std::max(
+                    1,
+                    levelHeight / 2);
         }
     }
 
@@ -194,6 +253,15 @@ namespace SpaceSim
         int width,
         int height)
     {
+        if (hdrSceneTexture == 0 ||
+            width <= 0 ||
+            height <= 0)
+        {
+            return
+                0;
+        }
+
+
         resize(
             width,
             height);
@@ -203,14 +271,27 @@ namespace SpaceSim
             GL_DEPTH_TEST);
 
 
+        glDepthMask(
+            GL_FALSE);
+
+
+        glDisable(
+            GL_BLEND);
+
+
         glBindVertexArray(
             m_vertexArray);
 
 
-        // =====================================================
+        // =========================================================
         // PASS 1:
-        // Extract only bright HDR pixels.
-        // =====================================================
+        // BRIGHT EXTRACTION
+        // =========================================================
+        //
+        // Extract HDR energy which should contribute to bloom.
+        //
+        // We immediately write at half resolution because bloom
+        // doesn't need full-resolution detail.
 
         glBindFramebuffer(
             GL_FRAMEBUFFER,
@@ -220,8 +301,8 @@ namespace SpaceSim
         glViewport(
             0,
             0,
-            m_width,
-            m_height);
+            m_levelWidths[0],
+            m_levelHeights[0]);
 
 
         m_extractShader.use();
@@ -230,6 +311,11 @@ namespace SpaceSim
         m_extractShader.setFloat(
             "threshold",
             m_threshold);
+
+
+        m_extractShader.setFloat(
+            "softKnee",
+            m_softKnee);
 
 
         glBindTextureUnit(
@@ -243,81 +329,148 @@ namespace SpaceSim
             3);
 
 
-        // =====================================================
+        // =========================================================
         // PASS 2:
-        // Repeated horizontal / vertical Gaussian blur.
-        // =====================================================
+        // DOWNSAMPLE PYRAMID
+        // =========================================================
+        //
+        // Each level contains a progressively broader version of
+        // the bright scene.
+        //
+        // The smallest levels are what eventually create the very
+        // wide, subtle halo around an intense source.
 
-        int sourceIndex =
-            0;
+        m_downsampleShader.use();
 
 
-        constexpr int blurPassCount =
-            10;
-
-
-        for (int pass = 0;
-             pass < blurPassCount;
-             ++pass)
+        for (int level = 1;
+             level < BloomLevelCount;
+             ++level)
         {
-            const int targetIndex =
-                1 -
-                sourceIndex;
-
-
             glBindFramebuffer(
                 GL_FRAMEBUFFER,
-                m_framebuffers[targetIndex]);
+                m_framebuffers[level]);
 
 
             glViewport(
                 0,
                 0,
-                m_width,
-                m_height);
-
-
-            m_blurShader.use();
-
-
-            // Alternate:
-            //
-            // horizontal
-            // vertical
-            // horizontal
-            // vertical...
-            m_blurShader.setInt(
-                "horizontal",
-                (pass % 2) == 0
-                    ? 1
-                    : 0);
+                m_levelWidths[level],
+                m_levelHeights[level]);
 
 
             glBindTextureUnit(
                 0,
-                m_textures[sourceIndex]);
+                m_textures[
+                    level - 1]);
 
 
             glDrawArrays(
                 GL_TRIANGLES,
                 0,
                 3);
-
-
-            sourceIndex =
-                targetIndex;
         }
+
+
+        // =========================================================
+        // PASS 3:
+        // UPSAMPLE + ADD
+        // =========================================================
+        //
+        // Start at the broadest level and add it into the next
+        // larger level.
+        //
+        // Continue upward until level 0 contains all bloom scales.
+
+        glEnable(
+            GL_BLEND);
+
+
+        glBlendEquation(
+            GL_FUNC_ADD);
+
+
+        glBlendFunc(
+            GL_ONE,
+            GL_ONE);
+
+
+        m_upsampleShader.use();
+
+
+        m_upsampleShader.setFloat(
+            "filterRadius",
+            1.0f);
+
+
+        for (int level =
+                 BloomLevelCount - 1;
+             level > 0;
+             --level)
+        {
+            const int targetLevel =
+                level - 1;
+
+
+            glBindFramebuffer(
+                GL_FRAMEBUFFER,
+                m_framebuffers[
+                    targetLevel]);
+
+
+            glViewport(
+                0,
+                0,
+                m_levelWidths[
+                    targetLevel],
+                m_levelHeights[
+                    targetLevel]);
+
+
+            glBindTextureUnit(
+                0,
+                m_textures[
+                    level]);
+
+
+            glDrawArrays(
+                GL_TRIANGLES,
+                0,
+                3);
+        }
+
+
+        // =========================================================
+        // RESTORE STATE
+        // =========================================================
+
+        glDisable(
+            GL_BLEND);
 
 
         glBindVertexArray(
             0);
 
 
+        glDepthMask(
+            GL_TRUE);
+
+
         glEnable(
             GL_DEPTH_TEST);
 
 
+        // Level 0 now contains:
+        //
+        //     tight glow
+        //     +
+        //     medium glow
+        //     +
+        //     broad halo
+        //
+        // PostProcessPass adds this back to the original HDR scene.
+
         return
-            m_textures[sourceIndex];
+            m_textures[0];
     }
 }

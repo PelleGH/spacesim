@@ -236,6 +236,12 @@ add_executable(RendererLab
 
     src/engine/renderer/atmosphere/AtmosphereViewLuts.cpp
     src/engine/renderer/atmosphere/AtmosphereViewLuts.h
+
+    src/engine/renderer/StarPass.cpp
+    src/engine/renderer/StarPass.h
+
+    src/engine/renderer/AutoExposurePass.cpp
+    src/engine/renderer/AutoExposurePass.h
 )
 
 target_include_directories(RendererLab PRIVATE

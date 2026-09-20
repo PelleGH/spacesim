@@ -82,16 +82,6 @@ namespace SpaceSim
         // =========================================================
         // VIEW-DEPENDENT ATMOSPHERE
         // =========================================================
-        //
-        // IMPORTANT:
-        //
-        // Generate these BEFORE PBR now.
-        //
-        // The same Sky-View LUT is used for:
-        //
-        // - atmospheric PBR reflections
-        // - final sky rendering
-        // - aerial perspective
 
         if (atmosphereActive)
         {
@@ -273,6 +263,10 @@ namespace SpaceSim
             GL_DEPTH_BUFFER_BIT);
 
 
+        // =========================================================
+        // PASS 2A: SPACE ENVIRONMENT
+        // =========================================================
+
         if (!atmosphereActive)
         {
             m_environmentPass.render(
@@ -283,7 +277,17 @@ namespace SpaceSim
 
 
         // =========================================================
-        // PASS 2A: PBR GEOMETRY
+        // PASS 2B: STARFIELD + PRIMARY STAR
+        // =========================================================
+
+        m_starPass.render(
+            camera,
+            aspect,
+            sun);
+
+
+        // =========================================================
+        // PASS 2C: PBR GEOMETRY
         // =========================================================
 
         glEnable(
@@ -463,11 +467,10 @@ namespace SpaceSim
                 parameters.topRadiusKm);
 
 
-            // The Sky-View LUT is a local probe centered on the
-            // current camera/player.
-            //
-            // Fade it out for distant objects rather than pretending
-            // one local probe is globally correct.
+            m_pbrShader.setVec3(
+                "atmosphereGroundAlbedo",
+                parameters.groundAlbedo);
+
 
             m_pbrShader.setFloat(
                 "atmosphereSpecularProbeRangeWorld",
@@ -493,7 +496,7 @@ namespace SpaceSim
             glBindTextureUnit(
                 9,
                 m_atmosphereViewLuts
-                    .skyViewTexture());
+                    .skyReflectionTexture());
         }
 
 
@@ -569,7 +572,32 @@ namespace SpaceSim
 
 
         // =========================================================
-        // PASS 4: BLOOM
+        // PASS 4: AUTO EXPOSURE
+        // =========================================================
+        //
+        // Meter the actual finished HDR scene BEFORE bloom and
+        // tonemapping.
+        //
+        // This lets the exposure system see:
+        //
+        //     atmosphere
+        //     stars
+        //     planets
+        //     objects
+        //
+        // in their true HDR values.
+
+        if (m_autoExposureEnabled)
+        {
+            m_autoExposurePass.update(
+                finalHdrTexture,
+                width,
+                height);
+        }
+
+
+        // =========================================================
+        // PASS 5: BLOOM
         // =========================================================
 
         const GLuint bloomTexture =
@@ -580,7 +608,7 @@ namespace SpaceSim
 
 
         // =========================================================
-        // PASS 5: TONEMAP
+        // PASS 6: TONEMAP
         // =========================================================
 
         glBindFramebuffer(
@@ -598,7 +626,10 @@ namespace SpaceSim
         m_postProcess.render(
             finalHdrTexture,
             bloomTexture,
-            m_exposure,
+            m_autoExposurePass
+                .exposureTexture(),
+            m_autoExposureEnabled,
+            m_exposureCompensation,
             m_bloomStrength);
     }
 }

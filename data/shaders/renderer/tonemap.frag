@@ -1,7 +1,9 @@
 #version 450 core
 
+
 layout(location = 0)
 in vec2 vUV;
+
 
 layout(location = 0)
 out vec4 outColor;
@@ -11,8 +13,13 @@ uniform sampler2D hdrTexture;
 
 uniform sampler2D bloomTexture;
 
+uniform sampler2D autoExposureTexture;
 
-uniform float exposure;
+
+uniform int autoExposureEnabled;
+
+
+uniform float exposureCompensation;
 
 uniform float bloomStrength;
 
@@ -52,7 +59,8 @@ vec3 acesApprox(
                 c *
                 color +
                 d
-            ) +
+            )
+            +
             e
         ),
         0.0,
@@ -62,32 +70,48 @@ vec3 acesApprox(
 
 void main()
 {
-    vec3 hdrColor =
+    const vec3 hdrColor =
         texture(
             hdrTexture,
             vUV).rgb;
 
 
-    vec3 bloom =
+    const vec3 bloom =
         texture(
             bloomTexture,
             vUV).rgb;
 
 
-    // Bloom is combined while we are STILL in HDR space.
-    //
-    // Tone mapping comes afterward.
+    // Bloom remains in HDR space.
     vec3 combinedHdr =
-        hdrColor +
+        hdrColor
+        +
         bloom *
         bloomStrength;
+
+
+    float exposure =
+        exposureCompensation;
+
+
+    if (autoExposureEnabled !=
+        0)
+    {
+        exposure *=
+            texelFetch(
+                autoExposureTexture,
+                ivec2(
+                    0,
+                    0),
+                0).r;
+    }
 
 
     combinedHdr *=
         exposure;
 
 
-    vec3 mappedColor =
+    const vec3 mappedColor =
         acesApprox(
             combinedHdr);
 

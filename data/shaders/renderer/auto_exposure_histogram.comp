@@ -1,0 +1,175 @@
+#version 450 core
+
+
+layout(
+    local_size_x = 16,
+    local_size_y = 16,
+    local_size_z = 1
+) in;
+
+
+layout(binding = 0)
+uniform sampler2D hdrTexture;
+
+
+// 256 histogram buckets + one valid-pixel counter.
+layout(std430, binding = 0)
+buffer HistogramBuffer
+{
+    uint histogram[257];
+};
+
+
+uniform float minLogLuminance;
+
+uniform float maxLogLuminance;
+
+uniform float meteringFloor;
+
+
+shared uint localHistogram[256];
+
+shared uint localValidCount;
+
+
+void main()
+{
+    // =============================================================
+    // CLEAR PER-WORKGROUP HISTOGRAM
+    // =============================================================
+
+    const uint localIndex =
+        gl_LocalInvocationIndex;
+
+
+    localHistogram[
+        localIndex] =
+        0u;
+
+
+    if (localIndex ==
+        0u)
+    {
+        localValidCount =
+            0u;
+    }
+
+
+    barrier();
+
+
+    // =============================================================
+    // SAMPLE HDR PIXEL
+    // =============================================================
+
+    const ivec2 imageSizePixels =
+        textureSize(
+            hdrTexture,
+            0);
+
+
+    const ivec2 pixel =
+        ivec2(
+            gl_GlobalInvocationID.xy);
+
+
+    if (pixel.x <
+            imageSizePixels.x
+        &&
+        pixel.y <
+            imageSizePixels.y)
+    {
+        const vec3 hdrColor =
+            texelFetch(
+                hdrTexture,
+                pixel,
+                0).rgb;
+
+
+        const float luminance =
+            dot(
+                max(
+                    hdrColor,
+                    vec3(0.0)),
+                vec3(
+                    0.2126,
+                    0.7152,
+                    0.0722));
+
+
+        // ---------------------------------------------------------
+        // Ignore essentially-black pixels.
+        // ---------------------------------------------------------
+        //
+        // Without this, a typical space view might contain 90%
+        // absolute black, causing the exposure meter to brighten
+        // the scene far too aggressively.
+
+        if (luminance >=
+            meteringFloor)
+        {
+            const float logLuminance =
+                log2(
+                    max(
+                        luminance,
+                        0.000001));
+
+
+            const float normalized =
+                clamp(
+                    (
+                        logLuminance -
+                        minLogLuminance
+                    )
+                    /
+                    max(
+                        maxLogLuminance -
+                        minLogLuminance,
+                        0.000001),
+                    0.0,
+                    1.0);
+
+
+            const uint bin =
+                min(
+                    uint(
+                        normalized *
+                        255.0),
+                    255u);
+
+
+            atomicAdd(
+                localHistogram[
+                    bin],
+                1u);
+
+
+            atomicAdd(
+                localValidCount,
+                1u);
+        }
+    }
+
+
+    barrier();
+
+
+    // =============================================================
+    // MERGE WORKGROUP HISTOGRAM
+    // =============================================================
+
+    atomicAdd(
+        histogram[
+            localIndex],
+        localHistogram[
+            localIndex]);
+
+
+    if (localIndex ==
+        0u)
+    {
+        atomicAdd(
+            histogram[256],
+            localValidCount);
+    }
+}
