@@ -90,10 +90,10 @@ namespace SpaceSim
 
 
         static constexpr int SkyWidth =
-            320;
+            1280;
 
         static constexpr int SkyHeight =
-            180;
+            720;
 
         static constexpr int SkyMipLevels =
             9;

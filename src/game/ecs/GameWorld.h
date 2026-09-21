@@ -8,7 +8,7 @@ namespace SpaceSim
     struct GameWorld
     {
         entt::registry registry;
-
+        float renderInterpolationAlpha = 0.0f;
         // Global position corresponding to local gameplay coordinate (0,0,0).
         // Future floating-origin/bubble rebasing changes this value while local
         // entities remain near zero.

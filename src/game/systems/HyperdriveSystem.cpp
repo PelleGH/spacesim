@@ -344,6 +344,7 @@ namespace SpaceSim
             control.angularInput = glm::vec3(0.0f);
             control.mouseLookRate = glm::vec2(0.0f);
             control.boost = false;
+            control.orbitalCruise = false;
         }
 
         unloadLocalTransientContent(world, ship);

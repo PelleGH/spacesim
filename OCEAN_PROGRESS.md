@@ -50,3 +50,5 @@ Original edited files are backed up in the original workspace at:
 ## Roadmap after this pass
 
 Finish ocean stability and reflection validation, then bring one real adaptive coastline into RendererLab. Establish common coordinates, elevation, sea level and collision queries before extensive land-material/cloud polish. Develop terrain geometry and materials together. Clouds, advanced water features and additional planet classes follow. The atmosphere foundation is retained; its broader parameter and performance validation is still needed.
+
+Maybe add dynamic oceans dependent on weather/planets/other stellar bodies that would affect it?

@@ -572,23 +572,9 @@ vec3 localOceanRipples(
         oceanRadiusKm;
 
 
-    float footprint =
-        max(
-            length(
-                dFdx(
-                    p)),
-            length(
-                dFdy(
-                    p)));
+    float footprint = 0.0;
 
-
-    float h =
-        max(
-            0.0008,
-            footprint
-            *
-            0.5);
-
+    float h = 0.0008;
 
     vec3 helper =
         abs(
@@ -2259,16 +2245,23 @@ void main()
             sphereDirection);
 
 
+    vec3 smoothRippleNormal =
+        localOceanRipples(
+            sphereUp,
+            sphereDirection);
+            
     vec3 reflectionOceanNormal =
         normalize(
             mix(
-                geometricNormal,
-                resolvedOceanNormal,
-                0.65));
-
-
+                sphereUp,
+                smoothRippleNormal,
+                0.35));
     vec3 glitterNormal =
-        resolvedOceanNormal;
+        normalize(
+            mix(
+                sphereUp,
+                smoothRippleNormal,
+                0.12));
 
 
     float facetVariation =

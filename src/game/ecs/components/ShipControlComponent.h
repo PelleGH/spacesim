@@ -25,5 +25,12 @@ namespace SpaceSim
 
         bool boost = false;
         bool flightAssist = true;
+
+        // High-speed local/system travel mode.
+        //
+        // This is not true orbital mechanics. It keeps the normal manual ship
+        // controls but expands the translational flight envelope so the player
+        // can travel around planetary-scale distances without hyperdrive.
+        bool orbitalCruise = false;
     };
 }

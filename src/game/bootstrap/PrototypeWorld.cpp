@@ -13,7 +13,7 @@
 #include "game/ecs/components/ShipMovementComponent.h"
 #include "game/ecs/components/TransformComponent.h"
 #include "game/world/SpaceScale.h"
-
+#include "game/ecs/components/PreviousTransformComponent.h"
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat3x3.hpp>

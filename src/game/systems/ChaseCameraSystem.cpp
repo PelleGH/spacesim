@@ -2,7 +2,7 @@
 
 #include "game/ecs/components/CameraComponent.h"
 #include "game/ecs/components/TransformComponent.h"
-
+#include "game/ecs/components/PreviousTransformComponent.h"
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/mat3x3.hpp>
@@ -13,7 +13,7 @@ namespace SpaceSim
 {
     namespace
     {
-        glm::quat orientationFromForwardUp(const glm::vec3& forward, const glm::vec3& up)
+        glm::quat orientationFromForwardUp(const glm::vec3 &forward, const glm::vec3 &up)
         {
             const glm::vec3 f = glm::normalize(forward);
             const glm::vec3 right = glm::normalize(glm::cross(f, up));
@@ -27,7 +27,7 @@ namespace SpaceSim
         }
     }
 
-    void ChaseCameraSystem::update(GameWorld& world, float dt)
+    void ChaseCameraSystem::update(GameWorld &world, float dt)
     {
         if (world.playerShip == entt::null ||
             world.activeCamera == entt::null ||
@@ -39,8 +39,8 @@ namespace SpaceSim
             return;
         }
 
-        const auto& shipTransform = world.registry.get<TransformComponent>(world.playerShip);
-        auto& cameraTransform = world.registry.get<TransformComponent>(world.activeCamera);
+        const TransformComponent shipTransform = interpolatedTransform(world.registry, world.playerShip, world.renderInterpolationAlpha);
+        auto &cameraTransform = world.registry.get<TransformComponent>(world.activeCamera);
 
         const glm::vec3 shipForward = glm::normalize(
             shipTransform.rotation * glm::vec3(0.0f, 0.0f, -1.0f));
