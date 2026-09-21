@@ -134,6 +134,7 @@ add_executable(SpaceSim
     src/game/rendering/RenderSystem.cpp
     src/game/systems/PlayerControlSystem.cpp
     src/game/systems/ShipMovementSystem.cpp
+    src/game/systems/LocalBubbleRebaseSystem.cpp
     src/game/systems/HyperdriveSystem.cpp
     src/game/systems/ChaseCameraSystem.cpp
 )

@@ -1,10 +1,12 @@
 #include "game/runtime/GameApplication.h"
 
 #include "game/bootstrap/PrototypeWorld.h"
+#include "game/ecs/components/GlobalPositionComponent.h"
 #include "game/ecs/components/HyperdriveComponents.h"
 #include "game/ecs/components/PlanetComponents.h"
 #include "game/ecs/components/ShipControlComponent.h"
 #include "game/ecs/components/ShipMovementComponent.h"
+#include "game/ecs/components/TransformComponent.h"
 #include "game/rendering/GameRenderResources.h"
 #include "game/world/SpaceScale.h"
 
@@ -52,7 +54,9 @@ namespace SpaceSim
             << "  Local gameplay units: metres / seconds\n"
             << "  Placeholder ship: ~28 m long\n"
             << "  Planet distance: 6 planetary radii (global layer)\n"
-            << "  Distant planet render: fake distance + physical angular size\n\n"
+            << "  Planet render: distant angular-size -> physical near-body handoff\n"
+            << "  Near-body transition: 1500 km altitude\n"
+            << "  Local bubble rebase: 10 km from local origin\n\n"
             << "Flight controls:\n"
             << "  W / S       = forward / reverse thrust\n"
             << "  A / D       = strafe left / right\n"
@@ -157,6 +161,7 @@ namespace SpaceSim
         // local-flight movement automatically skips active hyperdrive ships.
         m_hyperdriveSystem.fixedUpdate(m_world, dt);
         m_shipMovementSystem.fixedUpdate(m_world, dt);
+        m_localBubbleRebaseSystem.fixedUpdate(m_world);
     }
 
     void GameApplication::update(float dt)
@@ -217,6 +222,34 @@ namespace SpaceSim
                       << speedKilometersPerHour << " km/h | Assist "
                       << (control.flightAssist ? "ON" : "OFF");
             }
+        }
+
+        if (m_world.primaryPlanet != entt::null &&
+            m_world.registry.valid(m_world.primaryPlanet) &&
+            m_world.registry.all_of<GlobalPositionComponent, PlanetComponent>(m_world.primaryPlanet) &&
+            m_world.registry.all_of<TransformComponent>(m_world.playerShip))
+        {
+            const auto& planetPosition =
+                m_world.registry.get<GlobalPositionComponent>(m_world.primaryPlanet);
+            const auto& planet =
+                m_world.registry.get<PlanetComponent>(m_world.primaryPlanet);
+            const auto& shipTransform =
+                m_world.registry.get<TransformComponent>(m_world.playerShip);
+
+            const glm::dvec3 shipGlobalMeters =
+                m_world.localToGlobalMeters(shipTransform.positionMeters);
+            const double altitudeMeters =
+                glm::length(shipGlobalMeters - planetPosition.positionMeters) -
+                planet.radiusMeters;
+
+            const bool nearBody =
+                altitudeMeters <= SpaceScale::NearBodyTransitionAltitudeMeters;
+
+            title << std::fixed << std::setprecision(1)
+                  << " | Alt "
+                  << altitudeMeters / SpaceScale::MetersPerKilometer
+                  << " km | "
+                  << (nearBody ? "NEAR BODY" : "DISTANT BODY");
         }
 
         title << " | Jump: " << m_hyperdriveSystem.selectedTargetName(m_world);

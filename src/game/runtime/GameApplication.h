@@ -5,6 +5,7 @@
 #include "game/rendering/RenderSystem.h"
 #include "game/systems/ChaseCameraSystem.h"
 #include "game/systems/HyperdriveSystem.h"
+#include "game/systems/LocalBubbleRebaseSystem.h"
 #include "game/systems/PlayerControlSystem.h"
 #include "game/systems/ShipMovementSystem.h"
 #include "input/SdlInput.h"
@@ -49,6 +50,7 @@ namespace SpaceSim
 
         PlayerControlSystem m_playerControlSystem;
         ShipMovementSystem m_shipMovementSystem;
+        LocalBubbleRebaseSystem m_localBubbleRebaseSystem;
         HyperdriveSystem m_hyperdriveSystem;
         ChaseCameraSystem m_chaseCameraSystem;
         RenderSystem m_renderSystem;

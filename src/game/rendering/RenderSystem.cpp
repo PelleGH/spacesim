@@ -155,12 +155,13 @@ namespace SpaceSim
         const AtmosphereInstance* activeAtmosphere = nullptr;
 
         // -----------------------------------------------------------------
-        // Global -> distant render layer.
+        // Global planet -> render representation.
         //
-        // The planet stays physically Earth-sized and tens of thousands of km
-        // away in gameplay coordinates. Rendering uses a safe fixed center
-        // distance and derives visual radius from R / D, which preserves the
-        // exact apparent angular size without feeding astronomical floats to GL.
+        // Far away we keep the compact angular-size representation. Close to
+        // a planet we switch to a true camera-relative center and physical
+        // radius using the same metres->render scale as local gameplay. This
+        // removes the old radius/distance safety clamp that made the surface
+        // visually unreachable after hyperdrive dropout.
         // -----------------------------------------------------------------
         const auto planetView = world.registry.view<
             GlobalPositionComponent,
@@ -183,17 +184,61 @@ namespace SpaceSim
             }
 
             const glm::vec3 direction = glm::normalize(glm::vec3(relativeMeters));
-            const double radiusDistanceRatio =
-                planet.radiusMeters / physicalDistanceMeters;
+            const double altitudeMeters =
+                physicalDistanceMeters - planet.radiusMeters;
+            const bool useNearBody =
+                altitudeMeters <= SpaceScale::NearBodyTransitionAltitudeMeters;
 
-            // This v1 path is intentionally the distant/orbital representation.
-            // Clamp only prevents an invalid camera-inside-sphere representation;
-            // a true surface renderer transition belongs to the later scale layer.
-            const float renderRadius =
-                SpaceScale::DistantBodyCenterRenderUnits *
-                static_cast<float>(std::clamp(radiusDistanceRatio, 0.000001, 0.98));
-            const glm::vec3 center =
-                direction * SpaceScale::DistantBodyCenterRenderUnits;
+            glm::vec3 center(0.0f);
+            float renderRadius = 0.0f;
+
+            if (useNearBody)
+            {
+                // Near-body mode shares the exact local gameplay scale. A
+                // 100 km physical altitude is therefore 100 km of actual
+                // camera-relative separation in render space, rather than an
+                // apparent-size approximation. The renderer already uses
+                // reversed-Z, so this large depth range is intentional.
+                center = metersToRender(relativeMeters);
+                renderRadius = static_cast<float>(
+                    planet.radiusMeters *
+                    static_cast<double>(SpaceScale::RenderUnitsPerLocalMeter));
+
+                const double atmosphereThicknessMeters =
+                    world.registry.all_of<AtmosphereComponent>(entity)
+                        ? std::max(
+                              0.0,
+                              static_cast<double>(
+                                  world.registry.get<AtmosphereComponent>(entity)
+                                      .parameters.topRadiusKm -
+                                  world.registry.get<AtmosphereComponent>(entity)
+                                      .parameters.bottomRadiusKm) *
+                                  SpaceScale::MetersPerKilometer)
+                        : 0.0;
+
+                const double requiredFarMeters =
+                    physicalDistanceMeters +
+                    planet.radiusMeters +
+                    atmosphereThicknessMeters +
+                    10000.0;
+
+                camera.farPlane = std::max(
+                    camera.farPlane,
+                    static_cast<float>(
+                        requiredFarMeters *
+                        static_cast<double>(SpaceScale::RenderUnitsPerLocalMeter)));
+            }
+            else
+            {
+                const double radiusDistanceRatio =
+                    planet.radiusMeters / physicalDistanceMeters;
+
+                renderRadius =
+                    SpaceScale::DistantBodyCenterRenderUnits *
+                    static_cast<float>(radiusDistanceRatio);
+                center =
+                    direction * SpaceScale::DistantBodyCenterRenderUnits;
+            }
 
             PlanetRenderObject renderPlanet;
             renderPlanet.mesh = &resources.planetSphere();
