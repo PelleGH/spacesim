@@ -50,55 +50,123 @@ namespace
     // =============================================================
     // LOCAL HIGH-RESOLUTION OCEAN GRID
     // =============================================================
+    //
+    // Dense centre plus eleven power-of-two annuli.
+    //
+    // The extra outer level gives us a 524.288 km half-width,
+    // meaning the complete local ocean patch is a little over
+    // 1,048 km across.
+    //
+    // Inner holes avoid overdraw. Fine outer edges collapse
+    // alternate samples onto the coarse ring's lattice.
+    //
 
-    // A dense center and ten power-of-two annuli. Inner holes avoid overdraw.
-    // Fine outer edges collapse alternate samples onto the coarse ring's lattice.
     std::unique_ptr<SpaceSim::GpuMesh> createOceanPatchMesh()
     {
-        constexpr int cells=128, side=cells+1, levels=11;
+        constexpr int cells =
+            128;
+
+
+        constexpr int side =
+            cells
+            +
+            1;
+
+
+        constexpr int levels =
+            12;
+
 
         std::vector<SpaceSim::MeshVertex> vertices;
+
         std::vector<std::uint32_t> indices;
 
-        for (int level=0;level<levels;++level)
+
+        for (
+            int level = 0;
+            level < levels;
+            ++level)
         {
-            const auto offset=
+            const auto offset =
                 static_cast<std::uint32_t>(
                     vertices.size());
 
-            const float halfSize=
-                0.256f*
+
+            const float halfSize =
+                0.256f
+                *
                 static_cast<float>(
-                    1u<<level); // km
+                    1u
+                    <<
+                    level);
 
-            for (int y=0;y<=cells;++y)
+
+            for (
+                int y = 0;
+                y <= cells;
+                ++y)
             {
-                for (int x=0;x<=cells;++x)
+                for (
+                    int x = 0;
+                    x <= cells;
+                    ++x)
                 {
-                    int sx=x;
-                    int sy=y;
+                    int sx =
+                        x;
 
-                    if (level<levels-1)
+
+                    int sy =
+                        y;
+
+
+                    if (
+                        level
+                            <
+                            levels - 1)
                     {
-                        if ((y==0 || y==cells) && (x&1))
+                        if (
+                            (
+                                y == 0
+                                ||
+                                y == cells
+                            )
+                            &&
+                            (
+                                x & 1
+                            ))
                         {
                             --sx;
                         }
 
-                        if ((x==0 || x==cells) && (y&1))
+
+                        if (
+                            (
+                                x == 0
+                                ||
+                                x == cells
+                            )
+                            &&
+                            (
+                                y & 1
+                            ))
                         {
                             --sy;
                         }
                     }
 
+
                     SpaceSim::MeshVertex vertex{};
 
-                    vertex.position=
+
+                    vertex.position =
                     {
-                        halfSize*
+                        halfSize
+                            *
                             (
-                                2.0f*
-                                sx/
+                                2.0f
+                                *
+                                sx
+                                /
                                 cells
                                 -
                                 1.0f
@@ -106,176 +174,226 @@ namespace
 
                         0.0f,
 
-                        halfSize*
+                        halfSize
+                            *
                             (
-                                2.0f*
-                                sy/
+                                2.0f
+                                *
+                                sy
+                                /
                                 cells
                                 -
                                 1.0f
                             )
                     };
 
-                    vertex.normal=
+
+                    vertex.normal =
                     {
                         0.0f,
                         1.0f,
                         0.0f
                     };
 
-                    vertex.texCoord=
+
+                    vertex.texCoord =
                     {
                         0.0f,
                         0.0f
                     };
+
 
                     vertices.push_back(
                         vertex);
                 }
             }
 
-            for (int y=0;y<cells;++y)
+
+            for (
+                int y = 0;
+                y < cells;
+                ++y)
             {
-                for (int x=0;x<cells;++x)
+                for (
+                    int x = 0;
+                    x < cells;
+                    ++x)
                 {
-                    if (level>0 &&
-                        x>=cells/4 &&
-                        x<3*cells/4 &&
-                        y>=cells/4 &&
-                        y<3*cells/4)
+                    if (
+                        level > 0
+                        &&
+                        x >= cells / 4
+                        &&
+                        x < 3 * cells / 4
+                        &&
+                        y >= cells / 4
+                        &&
+                        y < 3 * cells / 4)
                     {
                         continue;
                     }
 
-                    const auto a=
-                        offset+
-                        y*side+
+
+                    const auto a =
+                        offset
+                        +
+                        y * side
+                        +
                         x;
 
-                    const auto b=
-                        a+1;
 
-                    const auto c=
-                        a+side;
+                    const auto b =
+                        a
+                        +
+                        1;
 
-                    const auto d=
-                        c+1;
+
+                    const auto c =
+                        a
+                        +
+                        side;
+
+
+                    const auto d =
+                        c
+                        +
+                        1;
+
 
                     indices.insert(
                         indices.end(),
                         {
-                            a,b,d,
-                            a,d,c
+                            a, b, d,
+                            a, d, c
                         });
                 }
             }
         }
 
 
-        if (std::getenv(
+        // =========================================================
+        // OPTIONAL TOPOLOGY CHECK
+        // =========================================================
+
+        if (
+            std::getenv(
                 "SPACESIM_HIDDEN_CHECK"))
         {
-            using Point=
-                std::pair<int,int>;
-
-            using Edge=
-                std::pair<Point,Point>;
+            using Point =
+                std::pair<int, int>;
 
 
-            std::map<Edge,int> edges;
+            using Edge =
+                std::pair<Point, Point>;
 
-            double area=
+
+            std::map<Edge, int> edges;
+
+
+            double area =
                 0.0;
 
 
-            const auto point=
+            const auto point =
                 [&](std::uint32_t index)
                 {
-                    const auto p=
+                    const auto p =
                         vertices.at(
                             index)
                             .position;
+
 
                     return Point
                     {
                         int(
                             std::lround(
-                                p.x/
+                                p.x
+                                /
                                 .004f)),
 
                         int(
                             std::lround(
-                                p.z/
+                                p.z
+                                /
                                 .004f))
                     };
                 };
 
 
-            for (std::size_t i=0;
-                 i<indices.size();
-                 i+=3)
+            for (
+                std::size_t i = 0;
+                i < indices.size();
+                i += 3)
             {
-                const Point a=
+                const Point a =
                     point(
                         indices[i]);
 
-                const Point b=
+
+                const Point b =
                     point(
-                        indices[i+1]);
+                        indices[i + 1]);
 
-                const Point c=
+
+                const Point c =
                     point(
-                        indices[i+2]);
+                        indices[i + 2]);
 
 
-                const double cross=
+                const double cross =
                     double(
-                        b.first-
+                        b.first
+                        -
                         a.first)
                     *
                     (
-                        c.second-
+                        c.second
+                        -
                         a.second
                     )
                     -
                     double(
-                        b.second-
+                        b.second
+                        -
                         a.second)
                     *
                     (
-                        c.first-
+                        c.first
+                        -
                         a.first
                     );
 
 
-                if (cross<0)
+                if (cross < 0)
                 {
                     throw std::runtime_error(
                         "Ocean ring winding inverted");
                 }
 
 
-                if (cross==0)
+                if (cross == 0)
                 {
-                    // Collapsed stitch triangles.
+                    // Collapsed stitch triangle.
                     continue;
                 }
 
 
-                area+=
-                    cross*
+                area +=
+                    cross
+                    *
                     .5;
 
 
-                const auto edge=
-                    [&](Point u,Point v)
+                const auto edge =
+                    [&](Point u, Point v)
                     {
-                        if (v<u)
+                        if (v < u)
                         {
                             std::swap(
                                 u,
                                 v);
                         }
+
 
                         ++edges[
                             {
@@ -285,48 +403,72 @@ namespace
                     };
 
 
-                edge(a,b);
-                edge(b,c);
-                edge(c,a);
+                edge(
+                    a,
+                    b);
+
+
+                edge(
+                    b,
+                    c);
+
+
+                edge(
+                    c,
+                    a);
             }
 
 
-            constexpr int boundary=
-                65536; // 262.144 km / 4 m.
+            constexpr int boundary =
+                131072;
 
 
-            for(const auto& entry:edges)
+            for (
+                const auto& entry :
+                edges)
             {
-                const auto a=
+                const auto a =
                     entry.first.first;
 
-                const auto b=
+
+                const auto b =
                     entry.first.second;
 
 
-                const bool outer=
+                const bool outer =
                     (
-                        a.first==
-                        b.first
+                        a.first
+                            ==
+                            b.first
                         &&
                         std::abs(
                             a.first)
-                        ==
-                        boundary
+                            ==
+                            boundary
                     )
                     ||
                     (
-                        a.second==
-                        b.second
+                        a.second
+                            ==
+                            b.second
                         &&
                         std::abs(
                             a.second)
-                        ==
-                        boundary
+                            ==
+                            boundary
                     );
 
 
-                if(entry.second!=(outer?1:2))
+                if (
+                    entry.second
+                        !=
+                        (
+                            outer
+                                ?
+                                1
+                                :
+                                2
+                        ))
                 {
                     throw std::runtime_error(
                         "Ocean ring gap or duplicate coverage");
@@ -334,15 +476,21 @@ namespace
             }
 
 
-            const double expected=
-                4.0*
-                boundary*
+            const double expected =
+                4.0
+                *
+                boundary
+                *
                 boundary;
 
 
-            if(std::abs(
-                    area-
-                    expected)>1.0)
+            if (
+                std::abs(
+                    area
+                    -
+                    expected)
+                    >
+                    1.0)
             {
                 throw std::runtime_error(
                     "Ocean ring area mismatch");
@@ -357,7 +505,7 @@ namespace
                 <<
                 " vertices, "
                 <<
-                indices.size()/3
+                indices.size() / 3
                 <<
                 " triangles, shared boundaries and complete coverage"
                 <<
@@ -366,9 +514,10 @@ namespace
 
 
         return
-            std::make_unique<SpaceSim::GpuMesh>(
-                vertices,
-                indices);
+            std::make_unique<
+                SpaceSim::GpuMesh>(
+                    vertices,
+                    indices);
     }
 }
 
@@ -376,16 +525,17 @@ namespace
 namespace SpaceSim
 {
     PlanetPass::PlanetPass()
-        : m_shader(
-              "data/shaders/planet/planet.vert",
-              "data/shaders/planet/planet.frag"),
+        :
+        m_shader(
+            "data/shaders/planet/planet.vert",
+            "data/shaders/planet/planet.frag"),
 
-          m_oceanPatchShader(
-              "data/shaders/planet/ocean_patch.vert",
-              "data/shaders/planet/ocean.frag"),
+        m_oceanPatchShader(
+            "data/shaders/planet/ocean_patch.vert",
+            "data/shaders/planet/ocean.frag"),
 
-          m_oceanPatchMesh(
-              createOceanPatchMesh())
+        m_oceanPatchMesh(
+            createOceanPatchMesh())
     {
         m_shader.setInt(
             "atmosphereTransmittanceLut",
@@ -442,7 +592,9 @@ namespace SpaceSim
 
 
         const bool atmosphereActive =
-            atmosphere != nullptr
+            atmosphere
+                !=
+                nullptr
             &&
             atmosphere->valid();
 
@@ -469,7 +621,7 @@ namespace SpaceSim
 
 
         // =========================================================
-        // SHARED SHADER STATE
+        // COMMON SHADER STATE
         // =========================================================
 
         const auto configureCommonShader =
@@ -630,7 +782,7 @@ namespace SpaceSim
 
 
         // =========================================================
-        // SHARED PLANET MATERIAL
+        // SHARED MATERIAL
         // =========================================================
 
         const auto configureMaterial =
@@ -710,33 +862,47 @@ namespace SpaceSim
 
 
         // =========================================================
-        // LOCAL GEOMETRIC OCEAN PATCH
+        // FIND LOCAL SURFACE/OCEAN HOST
         // =========================================================
         //
-        // Pick the nearest eligible spherical ocean, never an
-        // unrelated list entry.
+        // Only planets with a stable surface frame are eligible.
+        //
+        // In the game that frame is generated from global dvec3
+        // coordinates before conversion to renderer floats.
+        //
 
         const PlanetRenderObject* host =
             nullptr;
 
 
         float bestAltitudeKm =
-            4.0f;
+            24.0f;
 
 
-        glm::vec3 hostCenter{};
+        glm::vec3 hostCenter
+        {
+            0.0f
+        };
 
 
         float hostRadius =
             0.0f;
 
 
-        for (const auto& candidate :
-             planets)
+        for (
+            const auto& candidate :
+            planets)
         {
-            if (!candidate.mesh ||
-                !candidate.hasOcean ||
-                candidate.radiusKm <= 0.0f)
+            if (
+                !candidate.mesh
+                ||
+                !candidate.hasOcean
+                ||
+                candidate.radiusKm
+                    <=
+                    0.0f
+                ||
+                !candidate.surfaceFrameValid)
             {
                 continue;
             }
@@ -748,7 +914,11 @@ namespace SpaceSim
                         candidate.modelMatrix[0]));
 
 
-            if (radius <= 0.0f ||
+            if (
+                radius
+                    <=
+                    0.0f
+                ||
                 std::abs(
                     glm::length(
                         glm::vec3(
@@ -756,7 +926,8 @@ namespace SpaceSim
                     -
                     radius)
                     >
-                    radius*
+                    radius
+                    *
                     1e-4f
                 ||
                 std::abs(
@@ -766,33 +937,26 @@ namespace SpaceSim
                     -
                     radius)
                     >
-                    radius*
+                    radius
+                    *
                     1e-4f)
             {
                 continue;
             }
 
 
-            const glm::vec3 center(
-                candidate.modelMatrix[3]);
-
-
             const float altitude =
-                (
-                    glm::length(
-                        camera.position-
-                        center)
-                    /
-                    radius
-                    -
-                    1.0f
-                )
-                *
-                candidate.radiusKm;
+                candidate.surfaceAltitudeKm;
 
 
-            if (altitude >= 0.0f &&
-                altitude < bestAltitudeKm)
+            if (
+                altitude
+                    >=
+                    0.0f
+                &&
+                altitude
+                    <
+                    bestAltitudeKm)
             {
                 host =
                     &candidate;
@@ -803,7 +967,8 @@ namespace SpaceSim
 
 
                 hostCenter =
-                    center;
+                    glm::vec3(
+                        candidate.modelMatrix[3]);
 
 
                 hostRadius =
@@ -812,29 +977,50 @@ namespace SpaceSim
         }
 
 
-        glm::vec3 anchorNormal{};
+        // =========================================================
+        // LOCAL SURFACE BASIS
+        // =========================================================
 
-        glm::vec3 anchorRight{};
+        glm::vec3 anchorNormal
+        {
+            0.0f
+        };
 
-        glm::vec3 anchorForward{};
+
+        glm::vec3 anchorRight
+        {
+            0.0f
+        };
+
+
+        glm::vec3 anchorForward
+        {
+            0.0f
+        };
 
 
         constexpr float outerKm =
-            262.144f;
+            524.288f;
 
+
+        // =========================================================
+        // LOCAL GEOMETRIC OCEAN
+        // =========================================================
 
         if (host)
         {
+            // This normal was created from the authoritative
+            // double-precision camera/planet positions.
             anchorNormal =
                 glm::normalize(
-                    camera.position
-                    -
-                    hostCenter);
+                    host
+                        ->surfaceAnchorNormalWorld);
 
 
-            // Keep the orientation continuous through the old
-            // helper-axis threshold.
-            if (glm::length(
+            // Keep tangent orientation continuous while travelling
+            // over the sphere.
+            if (
+                glm::length(
                     m_anchorRight)
                     <
                     0.5f
@@ -849,18 +1035,18 @@ namespace SpaceSim
                 const glm::vec3 helper =
                     std::abs(
                         anchorNormal.y)
-                    <
-                    .9f
-                        ?
-                        glm::vec3(
-                            0.0f,
-                            1.0f,
-                            0.0f)
-                        :
-                        glm::vec3(
-                            1.0f,
-                            0.0f,
-                            0.0f);
+                        <
+                        .9f
+                    ?
+                    glm::vec3(
+                        0.0f,
+                        1.0f,
+                        0.0f)
+                    :
+                    glm::vec3(
+                        1.0f,
+                        0.0f,
+                        0.0f);
 
 
                 m_anchorRight =
@@ -951,24 +1137,18 @@ namespace SpaceSim
                 anchorForward);
 
 
-            const glm::dvec3 relative =
-                glm::dvec3(
-                    hostCenter)
-                -
-                glm::dvec3(
-                    camera.position)
-                +
-                glm::dvec3(
-                    anchorNormal)
-                *
-                double(
-                    hostRadius);
-
-
+            // IMPORTANT:
+            //
+            // This is now already a small camera-relative value.
+            //
+            // At an 8 km arrival it corresponds directly to
+            // approximately 8 km downward toward sea level.
+            //
+            // No giant-float subtraction happens here.
             m_oceanPatchShader.setVec3(
                 "oceanAnchorRelative",
-                glm::vec3(
-                    relative));
+                host
+                    ->surfaceAnchorRelativeWorld);
 
 
             m_oceanPatchShader.setMat4(
@@ -977,14 +1157,22 @@ namespace SpaceSim
                     host->modelMatrix));
 
 
-            m_oceanPatchShader.setFloat(
-                "geometricWaveVisibility",
+            // Full local geometric waves below 16 km.
+            //
+            // Fade them smoothly away between 16 and 24 km so
+            // there is no sudden handoff.
+            const float geometricWaveVisibility =
                 1.0f
                 -
                 glm::smoothstep(
-                    2.5f,
-                    4.0f,
-                    bestAltitudeKm));
+                    16.0f,
+                    24.0f,
+                    bestAltitudeKm);
+
+
+            m_oceanPatchShader.setFloat(
+                "geometricWaveVisibility",
+                geometricWaveVisibility);
 
 
             m_oceanPatchMesh->draw();
@@ -999,8 +1187,9 @@ namespace SpaceSim
             m_shader);
 
 
-        for (const PlanetRenderObject& planet :
-             planets)
+        for (
+            const PlanetRenderObject& planet :
+            planets)
         {
             if (!planet.mesh)
             {
@@ -1023,6 +1212,12 @@ namespace SpaceSim
                 0);
 
 
+            // The globe continues to draw land and the distant
+            // ocean.
+            //
+            // Inside the local patch footprint the globe's ocean
+            // fragments are discarded so the stable local surface
+            // owns the nearby water.
             m_shader.setInt(
                 "oceanLocalCoverage",
                 &planet == host
@@ -1076,7 +1271,9 @@ namespace SpaceSim
                     planet.modelMatrix));
 
 
-            m_adaptiveTerrain.drawOrMesh(planet, camera);
+            m_adaptiveTerrain.drawOrMesh(
+                planet,
+                camera);
         }
     }
 }

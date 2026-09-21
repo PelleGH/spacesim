@@ -86,7 +86,7 @@ namespace SpaceSim
         // First hyperdrive arrival stays just above the atmosphere. The current
         // renderer still uses the orbital/distant planet representation; once
         // the true surface transition exists this can be lowered substantially.
-        earthJumpPoint.arrivalDistanceMeters = planet.radiusMeters + 8000.0;
+        earthJumpPoint.arrivalDistanceMeters = planet.radiusMeters + 1000.0;
         world.registry.emplace<JumpPointComponent>(world.primaryPlanet, earthJumpPoint);
 
         PlanetVisualComponent visual;
