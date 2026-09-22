@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PlanetSurfaceModel.h"
+
 #include <memory>
 
 

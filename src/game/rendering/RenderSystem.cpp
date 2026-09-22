@@ -9,7 +9,7 @@
 #include "game/ecs/components/TransformComponent.h"
 #include "game/rendering/GameRenderResources.h"
 #include "game/world/SpaceScale.h"
-#include "game/ecs/components/PreviousTransformComponent.h"
+
 #include "renderer/RenderCamera.h"
 #include "renderer/SceneRenderer.h"
 #include "renderer/atmosphere/AtmosphereInstance.h"
@@ -25,48 +25,61 @@
 #include <cmath>
 #include <stdexcept>
 
+
 namespace SpaceSim
 {
     namespace
     {
         glm::vec3 metersToRender(
-            const glm::dvec3 &meters)
+            const glm::dvec3& meters)
         {
-            return glm::vec3(
-                       meters) *
-                   SpaceScale::RenderUnitsPerLocalMeter;
+            return
+                glm::vec3(
+                    meters)
+                *
+                SpaceScale::RenderUnitsPerLocalMeter;
         }
+
 
         glm::vec3 metersToRender(
-            const glm::vec3 &meters)
+            const glm::vec3& meters)
         {
-            return meters *
-                   SpaceScale::RenderUnitsPerLocalMeter;
+            return
+                meters
+                *
+                SpaceScale::RenderUnitsPerLocalMeter;
         }
+
 
         glm::mat4 cameraRelativeWorldMatrix(
-            const TransformComponent &transform,
-            const glm::dvec3 &cameraPositionMeters)
+            const TransformComponent& transform,
+            const glm::dvec3& cameraPositionMeters)
         {
             const glm::dvec3 relativeMeters =
-                transform.positionMeters -
+                transform.positionMeters
+                -
                 cameraPositionMeters;
 
-            return glm::translate(
-                       glm::mat4(
-                           1.0f),
-                       metersToRender(
-                           relativeMeters)) *
-                   glm::mat4_cast(
-                       transform.rotation) *
-                   glm::scale(
-                       glm::mat4(
-                           1.0f),
-                       transform.scale);
+
+            return
+                glm::translate(
+                    glm::mat4(
+                        1.0f),
+                    metersToRender(
+                        relativeMeters))
+                *
+                glm::mat4_cast(
+                    transform.rotation)
+                *
+                glm::scale(
+                    glm::mat4(
+                        1.0f),
+                    transform.scale);
         }
 
+
         PbrMaterial materialFrom(
-            const RenderableComponent &renderable)
+            const RenderableComponent& renderable)
         {
             PbrMaterial material;
 
@@ -79,47 +92,56 @@ namespace SpaceSim
             material.roughness =
                 renderable.roughness;
 
-            return material;
+
+            return
+                material;
         }
 
+
         void pushBoxRenderUnits(
-            std::vector<RenderObject> &objects,
-            const GpuMesh &box,
-            const glm::mat4 &root,
-            const glm::vec3 &localPositionRenderUnits,
-            const glm::vec3 &localSizeRenderUnits,
-            const PbrMaterial &material)
+            std::vector<RenderObject>& objects,
+            const GpuMesh& box,
+            const glm::mat4& root,
+            const glm::vec3& localPositionRenderUnits,
+            const glm::vec3& localSizeRenderUnits,
+            const PbrMaterial& material)
         {
             RenderObject object;
 
             object.mesh =
                 &box;
 
+
             object.modelMatrix =
-                root *
+                root
+                *
                 glm::translate(
                     glm::mat4(
                         1.0f),
-                    localPositionRenderUnits) *
+                    localPositionRenderUnits)
+                *
                 glm::scale(
                     glm::mat4(
                         1.0f),
                     localSizeRenderUnits);
 
+
             object.material =
                 material;
+
 
             objects.push_back(
                 object);
         }
 
+
         void pushBoxMeters(
-            std::vector<RenderObject> &objects,
-            const GpuMesh &box,
-            const glm::mat4 &root,
-            const glm::vec3 &localPositionMeters,
-            const glm::vec3 &localSizeMeters,
-            const PbrMaterial &material)
+            std::vector<RenderObject>& objects,
+            const GpuMesh& box,
+            const glm::mat4& root,
+            const glm::vec3& localPositionMeters,
+            const glm::vec3& localSizeMeters,
+            const PbrMaterial& material)
         {
             pushBoxRenderUnits(
                 objects,
@@ -133,36 +155,43 @@ namespace SpaceSim
         }
     }
 
+
     void RenderSystem::render(
-        GameWorld &world,
-        SceneRenderer &renderer,
-        const GameRenderResources &resources,
+        GameWorld& world,
+        SceneRenderer& renderer,
+        const GameRenderResources& resources,
         int width,
         int height)
     {
         if (
-            world.activeCamera ==
-                entt::null ||
+            world.activeCamera
+                ==
+                entt::null
+            ||
             !world.registry.valid(
-                world.activeCamera) ||
+                world.activeCamera)
+            ||
             !world.registry.all_of<
                 TransformComponent,
                 CameraComponent>(
-                world.activeCamera))
+                    world.activeCamera))
         {
             throw std::runtime_error(
                 "RenderSystem requires an active camera entity.");
         }
 
-        const auto &cameraTransform =
+
+        const auto& cameraTransform =
             world.registry.get<
                 TransformComponent>(
-                world.activeCamera);
+                    world.activeCamera);
 
-        const auto &cameraComponent =
+
+        const auto& cameraComponent =
             world.registry.get<
                 CameraComponent>(
-                world.activeCamera);
+                    world.activeCamera);
+
 
         // =========================================================
         // CAMERA
@@ -178,44 +207,56 @@ namespace SpaceSim
 
         RenderCamera camera;
 
+
         camera.position =
             glm::vec3(
                 0.0f);
 
+
         camera.forward =
             glm::normalize(
-                cameraTransform.rotation *
+                cameraTransform.rotation
+                *
                 glm::vec3(
                     0.0f,
                     0.0f,
                     -1.0f));
 
+
         camera.up =
             glm::normalize(
-                cameraTransform.rotation *
+                cameraTransform.rotation
+                *
                 glm::vec3(
                     0.0f,
                     1.0f,
                     0.0f));
 
+
         camera.verticalFovDegrees =
             cameraComponent.verticalFovDegrees;
+
 
         camera.nearPlane =
             std::max(
                 0.00001f,
-                cameraComponent.nearClipMeters *
-                    SpaceScale::RenderUnitsPerLocalMeter);
+                cameraComponent.nearClipMeters
+                *
+                SpaceScale::RenderUnitsPerLocalMeter);
+
 
         camera.farPlane =
             std::max(
                 SpaceScale::MinimumRenderFarPlane,
-                cameraComponent.farClipMeters *
-                    SpaceScale::RenderUnitsPerLocalMeter);
+                cameraComponent.farClipMeters
+                *
+                SpaceScale::RenderUnitsPerLocalMeter);
+
 
         const glm::dvec3 cameraGlobalMeters =
             world.localToGlobalMeters(
                 cameraTransform.positionMeters);
+
 
         // =========================================================
         // LIGHTING
@@ -223,27 +264,34 @@ namespace SpaceSim
 
         DirectionalLight sun;
 
+
         if (
-            world.primaryStar !=
-                entt::null &&
+            world.primaryStar
+                !=
+                entt::null
+            &&
             world.registry.valid(
-                world.primaryStar) &&
+                world.primaryStar)
+            &&
             world.registry.all_of<
                 PrimaryStarComponent>(
-                world.primaryStar))
+                    world.primaryStar))
         {
-            const auto &star =
+            const auto& star =
                 world.registry.get<
                     PrimaryStarComponent>(
-                    world.primaryStar);
+                        world.primaryStar);
+
 
             sun.direction =
                 glm::normalize(
                     star.direction);
 
+
             sun.radiance =
                 star.radiance;
         }
+
 
         EnvironmentLight environment;
 
@@ -255,13 +303,16 @@ namespace SpaceSim
             glm::vec3(
                 0.0f);
 
+
         m_planets.clear();
         m_objects.clear();
 
+
         AtmosphereInstance atmosphereInstance;
 
-        const AtmosphereInstance *activeAtmosphere =
+        const AtmosphereInstance* activeAtmosphere =
             nullptr;
+
 
         // =========================================================
         // GLOBAL PLANETS -> RENDER REPRESENTATIONS
@@ -291,61 +342,79 @@ namespace SpaceSim
                 PlanetComponent,
                 PlanetVisualComponent>();
 
+
         for (
             const entt::entity entity :
             planetView)
         {
-            const auto &globalPosition =
+            const auto& globalPosition =
                 planetView.get<
                     GlobalPositionComponent>(
-                    entity);
+                        entity);
 
-            const auto &planet =
+
+            const auto& planet =
                 planetView.get<
                     PlanetComponent>(
-                    entity);
+                        entity);
 
-            const auto &visual =
+
+            const auto& visual =
                 planetView.get<
                     PlanetVisualComponent>(
-                    entity);
+                        entity);
+
 
             const glm::dvec3 relativeMeters =
-                globalPosition.positionMeters -
+                globalPosition.positionMeters
+                -
                 cameraGlobalMeters;
+
 
             const double physicalDistanceMeters =
                 glm::length(
                     relativeMeters);
 
+
             if (
-                physicalDistanceMeters <=
-                    1.0 ||
-                planet.radiusMeters <=
+                physicalDistanceMeters
+                    <=
+                    1.0
+                ||
+                planet.properties.physical.radiusMeters
+                    <=
                     0.0)
             {
                 continue;
             }
+
 
             const glm::vec3 direction =
                 glm::normalize(
                     glm::vec3(
                         relativeMeters));
 
+
             const double altitudeMeters =
-                physicalDistanceMeters -
-                planet.radiusMeters;
+                physicalDistanceMeters
+                -
+                planet.properties.physical.radiusMeters;
+
 
             const bool useNearBody =
-                altitudeMeters <=
+                altitudeMeters
+                <=
                 SpaceScale::
                     NearBodyTransitionAltitudeMeters;
+
 
             glm::vec3 center(
                 0.0f);
 
+
             float renderRadius =
                 0.0f;
+
 
             // =====================================================
             // NEAR-BODY REPRESENTATION
@@ -357,45 +426,58 @@ namespace SpaceSim
                     metersToRender(
                         relativeMeters);
 
+
                 renderRadius =
                     static_cast<float>(
-                        planet.radiusMeters *
+                        planet.properties.physical.radiusMeters
+                        *
                         static_cast<double>(
                             SpaceScale::
                                 RenderUnitsPerLocalMeter));
 
+
                 const double atmosphereThicknessMeters =
                     world.registry.all_of<
                         AtmosphereComponent>(
-                        entity)
-                        ? std::max(
-                              0.0,
-                              static_cast<double>(
-                                  world.registry.get<
-                                                    AtmosphereComponent>(
-                                                    entity)
-                                      .parameters
-                                      .topRadiusKm -
-                                  world.registry.get<
-                                                    AtmosphereComponent>(
-                                                    entity)
-                                      .parameters
-                                      .bottomRadiusKm) *
-                                  SpaceScale::
-                                      MetersPerKilometer)
-                        : 0.0;
+                            entity)
+                        ?
+                        std::max(
+                            0.0,
+                            static_cast<double>(
+                                world.registry.get<
+                                    AtmosphereComponent>(
+                                        entity)
+                                    .parameters
+                                    .topRadiusKm
+                                -
+                                world.registry.get<
+                                    AtmosphereComponent>(
+                                        entity)
+                                    .parameters
+                                    .bottomRadiusKm)
+                            *
+                            SpaceScale::
+                                MetersPerKilometer)
+                        :
+                        0.0;
+
 
                 const double requiredFarMeters =
-                    physicalDistanceMeters +
-                    planet.radiusMeters +
-                    atmosphereThicknessMeters +
+                    physicalDistanceMeters
+                    +
+                    planet.properties.physical.radiusMeters
+                    +
+                    atmosphereThicknessMeters
+                    +
                     10000.0;
+
 
                 camera.farPlane =
                     std::max(
                         camera.farPlane,
                         static_cast<float>(
-                            requiredFarMeters *
+                            requiredFarMeters
+                            *
                             static_cast<double>(
                                 SpaceScale::
                                     RenderUnitsPerLocalMeter)));
@@ -408,20 +490,26 @@ namespace SpaceSim
             else
             {
                 const double radiusDistanceRatio =
-                    planet.radiusMeters /
+                    planet.properties.physical.radiusMeters
+                    /
                     physicalDistanceMeters;
+
 
                 renderRadius =
                     SpaceScale::
-                        DistantBodyCenterRenderUnits *
+                        DistantBodyCenterRenderUnits
+                    *
                     static_cast<float>(
                         radiusDistanceRatio);
 
+
                 center =
-                    direction *
+                    direction
+                    *
                     SpaceScale::
                         DistantBodyCenterRenderUnits;
             }
+
 
             // =====================================================
             // PLANET RENDER OBJECT
@@ -429,36 +517,47 @@ namespace SpaceSim
 
             PlanetRenderObject renderPlanet;
 
+
             renderPlanet.mesh =
                 &resources.planetSphere();
+
 
             renderPlanet.modelMatrix =
                 glm::translate(
                     glm::mat4(
                         1.0f),
-                    center) *
+                    center)
+                *
                 glm::scale(
                     glm::mat4(
                         1.0f),
                     glm::vec3(
                         renderRadius));
 
+
             renderPlanet.material =
                 visual.material;
 
+
             renderPlanet.hasOcean =
-                planet.hasOcean;
+                planet.properties.surface.hasLiquidOcean;
+
 
             renderPlanet.radiusKm =
                 static_cast<float>(
-                    planet.radiusMeters /
+                    planet.properties.physical.radiusMeters
+                    /
                     SpaceScale::
                         MetersPerKilometer);
 
+
             renderPlanet
                 .oceanGravityMetersPerSecondSquared =
-                planet
-                    .oceanGravityMetersPerSecondSquared;
+                    planet
+                        .properties
+                        .physical
+                        .surfaceGravityMetersPerSecondSquared;
+
 
             // =====================================================
             // STABLE NEAR-SURFACE FRAME
@@ -488,27 +587,37 @@ namespace SpaceSim
             constexpr double surfaceFrameAltitudeMeters =
                 24000.0;
 
+
             if (
-                altitudeMeters >=
-                    0.0 &&
-                altitudeMeters <=
+                altitudeMeters
+                    >=
+                    0.0
+                &&
+                altitudeMeters
+                    <=
                     surfaceFrameAltitudeMeters)
             {
                 const glm::dvec3 cameraFromPlanetMeters =
-                    cameraGlobalMeters -
+                    cameraGlobalMeters
+                    -
                     globalPosition.positionMeters;
+
 
                 const double cameraFromPlanetLengthMeters =
                     glm::length(
                         cameraFromPlanetMeters);
 
+
                 if (
-                    cameraFromPlanetLengthMeters >
-                    1.0)
+                    cameraFromPlanetLengthMeters
+                        >
+                        1.0)
                 {
                     const glm::dvec3 surfaceUp =
-                        cameraFromPlanetMeters /
+                        cameraFromPlanetMeters
+                        /
                         cameraFromPlanetLengthMeters;
+
 
                     // The sea-level point directly beneath the
                     // camera is simply altitude metres toward the
@@ -517,21 +626,27 @@ namespace SpaceSim
                     // This remains a small number even though the
                     // planet itself is enormous.
                     const glm::dvec3 anchorRelativeMeters =
-                        -surfaceUp *
+                        -surfaceUp
+                        *
                         altitudeMeters;
+
 
                     renderPlanet.surfaceFrameValid =
                         true;
 
+
                     renderPlanet.surfaceAltitudeKm =
                         static_cast<float>(
-                            altitudeMeters /
+                            altitudeMeters
+                            /
                             SpaceScale::
                                 MetersPerKilometer);
+
 
                     renderPlanet.surfaceAnchorNormalWorld =
                         glm::vec3(
                             surfaceUp);
+
 
                     renderPlanet.surfaceAnchorRelativeWorld =
                         metersToRender(
@@ -539,44 +654,54 @@ namespace SpaceSim
                 }
             }
 
+
             m_planets.push_back(
                 renderPlanet);
+
 
             // =====================================================
             // ATMOSPHERE
             // =====================================================
 
             if (
-                activeAtmosphere ==
-                    nullptr &&
+                activeAtmosphere
+                    ==
+                    nullptr
+                &&
                 world.registry.all_of<
                     AtmosphereComponent>(
-                    entity))
+                        entity))
             {
-                const auto &atmosphere =
+                const auto& atmosphere =
                     world.registry.get<
                         AtmosphereComponent>(
-                        entity);
+                            entity);
+
 
                 if (atmosphere.enabled)
                 {
                     atmosphereInstance.parameters =
                         &atmosphere.parameters;
 
+
                     atmosphereInstance.luts =
                         &resources.atmosphereLuts();
+
 
                     atmosphereInstance.planetCenterWorld =
                         center;
 
+
                     atmosphereInstance.planetRadiusWorld =
                         renderRadius;
+
 
                     activeAtmosphere =
                         &atmosphereInstance;
                 }
             }
         }
+
 
         // =========================================================
         // LOCAL GAMEPLAY OBJECTS
@@ -587,44 +712,58 @@ namespace SpaceSim
                 TransformComponent,
                 RenderableComponent>();
 
+
         for (
             const entt::entity entity :
             renderableView)
         {
-            const TransformComponent transform = interpolatedTransform(world.registry, entity, world.renderInterpolationAlpha);
+            const auto& transform =
+                renderableView.get<
+                    TransformComponent>(
+                        entity);
 
-            const auto &renderable =
+
+            const auto& renderable =
                 renderableView.get<
                     RenderableComponent>(
-                    entity);
+                        entity);
+
 
             if (
-                renderable.mesh !=
-                RenderMeshKind::
-                    PlaceholderShip)
+                renderable.mesh
+                    !=
+                    RenderMeshKind::
+                        PlaceholderShip)
             {
                 continue;
             }
+
 
             const glm::mat4 root =
                 cameraRelativeWorldMatrix(
                     transform,
                     cameraTransform.positionMeters);
 
+
             const PbrMaterial hull =
                 materialFrom(
                     renderable);
 
+
             PbrMaterial dark =
                 hull;
+
 
             dark.baseColor *=
                 0.42f;
 
+
             dark.roughness =
                 0.42f;
 
+
             PbrMaterial engine;
+
 
             engine.baseColor =
                 glm::vec3(
@@ -632,11 +771,14 @@ namespace SpaceSim
                     0.08f,
                     0.11f);
 
+
             engine.metallic =
                 0.25f;
 
+
             engine.roughness =
                 0.25f;
+
 
             engine.emissiveColor =
                 glm::vec3(
@@ -644,11 +786,14 @@ namespace SpaceSim
                     0.62f,
                     1.0f);
 
+
             engine.emissiveStrength =
                 12.0f;
 
-            const GpuMesh &box =
+
+            const GpuMesh& box =
                 resources.placeholderBox();
+
 
             // ~28 metre temporary ship.
             //
@@ -660,50 +805,70 @@ namespace SpaceSim
                 m_objects,
                 box,
                 root,
-                {0.0f,
-                 0.0f,
-                 0.0f},
-                {5.5f,
-                 3.2f,
-                 20.0f},
+                {
+                    0.0f,
+                    0.0f,
+                    0.0f
+                },
+                {
+                    5.5f,
+                    3.2f,
+                    20.0f
+                },
                 hull);
+
 
             pushBoxMeters(
                 m_objects,
                 box,
                 root,
-                {0.0f,
-                 0.25f,
-                 -12.5f},
-                {4.0f,
-                 2.6f,
-                 7.0f},
+                {
+                    0.0f,
+                    0.25f,
+                    -12.5f
+                },
+                {
+                    4.0f,
+                    2.6f,
+                    7.0f
+                },
                 hull);
+
 
             pushBoxMeters(
                 m_objects,
                 box,
                 root,
-                {0.0f,
-                 -0.20f,
-                 1.0f},
-                {17.0f,
-                 0.7f,
-                 7.5f},
+                {
+                    0.0f,
+                    -0.20f,
+                    1.0f
+                },
+                {
+                    17.0f,
+                    0.7f,
+                    7.5f
+                },
                 dark);
 
+
             pushBoxMeters(
                 m_objects,
                 box,
                 root,
-                {0.0f,
-                 0.0f,
-                 11.0f},
-                {4.2f,
-                 2.5f,
-                 2.0f},
+                {
+                    0.0f,
+                    0.0f,
+                    11.0f
+                },
+                {
+                    4.2f,
+                    2.5f,
+                    2.0f
+                },
                 engine);
         }
+
 
         // =========================================================
         // TEMPORARY SCALE REFERENCES
@@ -714,41 +879,51 @@ namespace SpaceSim
                 TransformComponent,
                 ScaleReferenceComponent>();
 
+
         for (
             const entt::entity entity :
             referenceView)
         {
-            const auto &transform =
+            const auto& transform =
                 referenceView.get<
                     TransformComponent>(
-                    entity);
+                        entity);
 
-            const auto &reference =
+
+            const auto& reference =
                 referenceView.get<
                     ScaleReferenceComponent>(
-                    entity);
+                        entity);
+
 
             const glm::mat4 root =
                 cameraRelativeWorldMatrix(
                     transform,
                     cameraTransform.positionMeters);
 
+
             PbrMaterial material;
+
 
             material.baseColor =
                 reference.baseColor;
 
+
             material.metallic =
                 0.12f;
+
 
             material.roughness =
                 0.52f;
 
+
             material.emissiveColor =
                 reference.baseColor;
 
+
             material.emissiveStrength =
                 reference.emissiveStrength;
+
 
             pushBoxMeters(
                 m_objects,
@@ -759,6 +934,7 @@ namespace SpaceSim
                 reference.sizeMeters,
                 material);
         }
+
 
         // =========================================================
         // DRAW

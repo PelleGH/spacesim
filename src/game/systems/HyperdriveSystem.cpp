@@ -94,7 +94,7 @@ namespace SpaceSim
                 const auto& planet = world.registry.get<PlanetComponent>(target);
                 const double altitudeMeters = std::max(
                     0.0,
-                    jumpPoint.arrivalDistanceMeters - planet.radiusMeters);
+                    jumpPoint.arrivalDistanceMeters - planet.properties.physical.radiusMeters);
                 std::cout << " | arrival altitude "
                           << altitudeMeters / SpaceScale::MetersPerKilometer
                           << " km";
@@ -492,7 +492,7 @@ namespace SpaceSim
                 const auto& planet = world.registry.get<PlanetComponent>(target);
                 const double altitudeMeters = std::max(
                     0.0,
-                    jumpPoint.arrivalDistanceMeters - planet.radiusMeters);
+                    jumpPoint.arrivalDistanceMeters - planet.properties.physical.radiusMeters);
                 std::cout << " | "
                           << altitudeMeters / SpaceScale::MetersPerKilometer
                           << " km above surface";

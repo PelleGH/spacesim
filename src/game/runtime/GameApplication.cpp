@@ -48,11 +48,8 @@ namespace SpaceSim
             throw std::runtime_error("Prototype world did not create an atmosphere.");
         }
 
-        const auto& atmosphere =
-            m_world.registry.get<AtmosphereComponent>(m_world.primaryPlanet);
-
-        m_renderResources =
-            std::make_unique<GameRenderResources>(atmosphere.parameters);
+        const auto& atmosphere = m_world.registry.get<AtmosphereComponent>(m_world.primaryPlanet);
+        m_renderResources = std::make_unique<GameRenderResources>(atmosphere.parameters);
 
         m_renderer.setExposure(1.0f);
         m_renderer.setBloomStrength(0.045f);
@@ -84,6 +81,7 @@ namespace SpaceSim
             << "  Q / E       = roll left / right\n"
             << "  Shift       = boost\n"
             << "  F           = toggle flight assist\n"
+            << "  C           = toggle orbital cruise\n"
             << "  Tab         = cycle hyperdrive jump points\n"
             << "  J           = align + hyperdrive toward selected point\n"
             << "  L           = atmospheric lighting\n"
@@ -103,51 +101,34 @@ namespace SpaceSim
     {
         while (m_window.processEvents())
         {
-            const double frameDelta =
-                std::min(
-                    m_clock.tick(),
-                    MaxFrameDeltaSeconds);
-
-            m_accumulator +=
-                frameDelta;
+            const double frameDelta = std::min(m_clock.tick(), MaxFrameDeltaSeconds);
+            m_accumulator += frameDelta;
 
             m_input.beginFrame();
-
             handleApplicationInput();
-
-            sampleGameplayInput(
-                static_cast<float>(frameDelta));
+            sampleGameplayInput(static_cast<float>(frameDelta));
 
             while (m_accumulator >= FixedDeltaSeconds)
             {
-                fixedUpdate(
-                    static_cast<float>(
-                        FixedDeltaSeconds));
-
-                m_accumulator -=
-                    FixedDeltaSeconds;
+                fixedUpdate(static_cast<float>(FixedDeltaSeconds));
+                m_accumulator -= FixedDeltaSeconds;
             }
 
             // How far the rendered frame lies between the previous and current
             // fixed simulation states.
             m_world.renderInterpolationAlpha =
                 static_cast<float>(
-                    m_accumulator /
-                    FixedDeltaSeconds);
+                    m_accumulator / FixedDeltaSeconds);
 
-            update(
-                static_cast<float>(
-                    frameDelta));
+            update(static_cast<float>(frameDelta));
 
-            if (m_window.pixelWidth() <= 0 ||
-                m_window.pixelHeight() <= 0)
+            if (m_window.pixelWidth() <= 0 || m_window.pixelHeight() <= 0)
             {
                 SDL_Delay(10);
                 continue;
             }
 
             render();
-
             m_window.swapBuffers();
         }
 
@@ -175,30 +156,16 @@ namespace SpaceSim
 
         if (m_input.keyPressed(SDL_SCANCODE_L))
         {
-            const bool enabled =
-                !m_renderer.atmosphereLightingEnabled();
-
-            m_renderer.setAtmosphereLightingEnabled(
-                enabled);
-
-            std::cout
-                << "Atmospheric lighting: "
-                << (enabled ? "ON" : "OFF")
-                << '\n';
+            const bool enabled = !m_renderer.atmosphereLightingEnabled();
+            m_renderer.setAtmosphereLightingEnabled(enabled);
+            std::cout << "Atmospheric lighting: " << (enabled ? "ON" : "OFF") << '\n';
         }
 
         if (m_input.keyPressed(SDL_SCANCODE_R))
         {
-            const bool enabled =
-                !m_renderer.atmosphereSpecularEnabled();
-
-            m_renderer.setAtmosphereSpecularEnabled(
-                enabled);
-
-            std::cout
-                << "Atmospheric reflections: "
-                << (enabled ? "ON" : "OFF")
-                << '\n';
+            const bool enabled = !m_renderer.atmosphereSpecularEnabled();
+            m_renderer.setAtmosphereSpecularEnabled(enabled);
+            std::cout << "Atmospheric reflections: " << (enabled ? "ON" : "OFF") << '\n';
         }
     }
 
@@ -206,13 +173,8 @@ namespace SpaceSim
     {
         // Input is sampled once per rendered frame and written into ECS control
         // intent. Fixed-rate movement consumes that intent below.
-        m_playerControlSystem.update(
-            m_world,
-            m_input,
-            frameDt);
-
-        m_hyperdriveSystem.update(
-            m_world);
+        m_playerControlSystem.update(m_world, m_input, frameDt);
+        m_hyperdriveSystem.update(m_world);
     }
 
     void GameApplication::fixedUpdate(float dt)
@@ -240,169 +202,101 @@ namespace SpaceSim
 
         // Hyperdrive owns the ship transform while aligning/traveling. Normal
         // local-flight movement automatically skips active hyperdrive ships.
-        m_hyperdriveSystem.fixedUpdate(
-            m_world,
-            dt);
-
-        m_shipMovementSystem.fixedUpdate(
-            m_world,
-            dt);
-
-        m_localBubbleRebaseSystem.fixedUpdate(
-            m_world);
+        m_hyperdriveSystem.fixedUpdate(m_world, dt);
+        m_shipMovementSystem.fixedUpdate(m_world, dt);
+        m_localBubbleRebaseSystem.fixedUpdate(m_world);
     }
 
     void GameApplication::update(float dt)
     {
-        // Presentation systems run at render rate.
-        //
-        // ChaseCameraSystem uses the interpolated ship transform as its target,
-        // while still maintaining its own smooth camera movement.
-        m_chaseCameraSystem.update(
-            m_world,
-            dt);
-
-        updateDebugTitle(
-            dt);
+        // Presentation systems run at render rate. The chase camera follows
+        // the same interpolated ship transform that the renderer presents.
+        m_chaseCameraSystem.update(m_world, dt);
+        updateDebugTitle(dt);
     }
 
     void GameApplication::updateDebugTitle(float dt)
     {
-        m_titleUpdateAccumulator +=
-            static_cast<double>(dt);
-
+        m_titleUpdateAccumulator += static_cast<double>(dt);
         if (m_titleUpdateAccumulator < 0.20)
         {
             return;
         }
-
-        m_titleUpdateAccumulator =
-            0.0;
+        m_titleUpdateAccumulator = 0.0;
 
         if (m_world.playerShip == entt::null ||
             !m_world.registry.valid(m_world.playerShip) ||
-            !m_world.registry.all_of<
-                ShipMovementComponent,
-                ShipControlComponent>(
-                    m_world.playerShip))
+            !m_world.registry.all_of<ShipMovementComponent, ShipControlComponent>(m_world.playerShip))
         {
             return;
         }
 
-        const auto& movement =
-            m_world.registry.get<ShipMovementComponent>(
-                m_world.playerShip);
+        const auto& movement = m_world.registry.get<ShipMovementComponent>(m_world.playerShip);
+        const auto& control = m_world.registry.get<ShipControlComponent>(m_world.playerShip);
 
-        const auto& control =
-            m_world.registry.get<ShipControlComponent>(
-                m_world.playerShip);
-
-        const double speedMetersPerSecond =
-            glm::length(
-                movement.velocityMetersPerSecond);
-
-        const double speedKilometersPerHour =
-            speedMetersPerSecond *
-            3.6;
+        const double speedMetersPerSecond = glm::length(movement.velocityMetersPerSecond);
+        const double speedKilometersPerHour = speedMetersPerSecond * 3.6;
 
         std::ostringstream title;
+        title << "SpaceSim | ";
 
-        title
-            << "SpaceSim | ";
-
-        if (m_world.registry.all_of<HyperdriveComponent>(
-                m_world.playerShip))
+        if (m_world.registry.all_of<HyperdriveComponent>(m_world.playerShip))
         {
             const auto& hyperdrive =
-                m_world.registry.get<HyperdriveComponent>(
-                    m_world.playerShip);
+                m_world.registry.get<HyperdriveComponent>(m_world.playerShip);
 
             if (hyperdrive.state == HyperdriveState::Aligning)
             {
-                title
-                    << "Hyperdrive ALIGNING";
+                title << "Hyperdrive ALIGNING";
             }
             else if (hyperdrive.state == HyperdriveState::Traveling)
             {
-                title
-                    << std::fixed
-                    << std::setprecision(0)
-                    << "Hyperdrive "
-                    << hyperdrive.travelSpeedMetersPerSecond /
-                           SpaceScale::MetersPerKilometer
-                    << " km/s | "
-                    << hyperdrive.remainingDistanceMeters /
-                           SpaceScale::MetersPerKilometer
-                    << " km remaining";
+                title << std::fixed << std::setprecision(0)
+                      << "Hyperdrive "
+                      << hyperdrive.travelSpeedMetersPerSecond / SpaceScale::MetersPerKilometer
+                      << " km/s | "
+                      << hyperdrive.remainingDistanceMeters / SpaceScale::MetersPerKilometer
+                      << " km remaining";
             }
             else
             {
-                title
-                    << std::fixed
-                    << std::setprecision(1)
-                    << speedMetersPerSecond
-                    << " m/s | "
-                    << speedKilometersPerHour
-                    << " km/h | Assist "
-                    << (control.flightAssist ? "ON" : "OFF");
+                title << std::fixed << std::setprecision(1)
+                      << speedMetersPerSecond << " m/s | "
+                      << speedKilometersPerHour << " km/h | Assist "
+                      << (control.flightAssist ? "ON" : "OFF");
             }
         }
 
         if (m_world.primaryPlanet != entt::null &&
             m_world.registry.valid(m_world.primaryPlanet) &&
-            m_world.registry.all_of<
-                GlobalPositionComponent,
-                PlanetComponent>(
-                    m_world.primaryPlanet) &&
-            m_world.registry.all_of<TransformComponent>(
-                m_world.playerShip))
+            m_world.registry.all_of<GlobalPositionComponent, PlanetComponent>(m_world.primaryPlanet) &&
+            m_world.registry.all_of<TransformComponent>(m_world.playerShip))
         {
             const auto& planetPosition =
-                m_world.registry.get<GlobalPositionComponent>(
-                    m_world.primaryPlanet);
-
+                m_world.registry.get<GlobalPositionComponent>(m_world.primaryPlanet);
             const auto& planet =
-                m_world.registry.get<PlanetComponent>(
-                    m_world.primaryPlanet);
-
+                m_world.registry.get<PlanetComponent>(m_world.primaryPlanet);
             const auto& shipTransform =
-                m_world.registry.get<TransformComponent>(
-                    m_world.playerShip);
+                m_world.registry.get<TransformComponent>(m_world.playerShip);
 
             const glm::dvec3 shipGlobalMeters =
-                m_world.localToGlobalMeters(
-                    shipTransform.positionMeters);
-
+                m_world.localToGlobalMeters(shipTransform.positionMeters);
             const double altitudeMeters =
-                glm::length(
-                    shipGlobalMeters -
-                    planetPosition.positionMeters)
-                -
-                planet.radiusMeters;
+                glm::length(shipGlobalMeters - planetPosition.positionMeters) -
+                planet.properties.physical.radiusMeters;
 
             const bool nearBody =
-                altitudeMeters <=
-                SpaceScale::NearBodyTransitionAltitudeMeters;
+                altitudeMeters <= SpaceScale::NearBodyTransitionAltitudeMeters;
 
-            title
-                << std::fixed
-                << std::setprecision(1)
-                << " | Alt "
-                << altitudeMeters /
-                       SpaceScale::MetersPerKilometer
-                << " km | "
-                << (nearBody
-                        ? "NEAR BODY"
-                        : "DISTANT BODY");
+            title << std::fixed << std::setprecision(1)
+                  << " | Alt "
+                  << altitudeMeters / SpaceScale::MetersPerKilometer
+                  << " km | "
+                  << (nearBody ? "NEAR BODY" : "DISTANT BODY");
         }
 
-        title
-            << " | Jump: "
-            << m_hyperdriveSystem.selectedTargetName(
-                   m_world);
-
-        m_window.setTitle(
-            title.str().c_str());
+        title << " | Jump: " << m_hyperdriveSystem.selectedTargetName(m_world);
+        m_window.setTitle(title.str().c_str());
     }
 
     void GameApplication::render()

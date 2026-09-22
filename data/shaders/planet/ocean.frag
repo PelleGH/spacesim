@@ -2206,7 +2206,7 @@ void main()
             height);
 
 
-    if (landMask >=
+    if (false && landMask >=
         0.5)
     {
         discard;

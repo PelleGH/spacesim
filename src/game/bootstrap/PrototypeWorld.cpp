@@ -60,19 +60,29 @@ namespace SpaceSim
     void createPrototypeWorld(GameWorld& world)
     {
         // -----------------------------------------------------------------
-        // Global layer: a physically sized Earth-like planet at system origin.
+        // Global layer: generate one resolved Earth-like ocean world.
+        //
+        // PlanetPreset is only a request to the generator. Everything below
+        // reads the resulting physical/environmental properties; renderers do
+        // not branch on the preset itself.
         // -----------------------------------------------------------------
         world.primaryPlanet = world.registry.create();
 
-        AtmosphereComponent atmosphere;
-        atmosphere.parameters = makeEarthLikeAtmosphere();
-        atmosphere.parameters.groundAlbedo = {0.10f, 0.14f, 0.18f};
+        PlanetGenerationRequest earthRequest;
+        earthRequest.preset = PlanetPreset::EarthLikeOceanWorld;
+        earthRequest.seed = 4505u;
+
+        const ResolvedPlanet earth = generatePlanet(earthRequest);
 
         PlanetComponent planet;
-        planet.radiusMeters =
-            static_cast<double>(atmosphere.parameters.bottomRadiusKm) *
-            SpaceScale::MetersPerKilometer;
-        planet.hasOcean = true;
+        planet.properties = earth;
+
+        AtmosphereComponent atmosphere;
+        atmosphere.parameters = deriveAtmosphereParameters(earth);
+        atmosphere.enabled = earth.atmosphere.surfacePressurePascals > 0.0;
+
+        PlanetVisualComponent visual;
+        visual.material = derivePlanetMaterial(earth);
 
         GlobalPositionComponent planetPosition;
         planetPosition.positionMeters = glm::dvec3(0.0);
@@ -80,28 +90,13 @@ namespace SpaceSim
         world.registry.emplace<GlobalPositionComponent>(world.primaryPlanet, planetPosition);
         world.registry.emplace<PlanetComponent>(world.primaryPlanet, planet);
         world.registry.emplace<AtmosphereComponent>(world.primaryPlanet, atmosphere);
+        world.registry.emplace<PlanetVisualComponent>(world.primaryPlanet, visual);
 
         JumpPointComponent earthJumpPoint;
-        earthJumpPoint.displayName = "Earth";
-        // First hyperdrive arrival stays just above the atmosphere. The current
-        // renderer still uses the orbital/distant planet representation; once
-        // the true surface transition exists this can be lowered substantially.
-        earthJumpPoint.arrivalDistanceMeters = planet.radiusMeters + 1000.0;
+        earthJumpPoint.displayName = "Earth-like Ocean World";
+        earthJumpPoint.arrivalDistanceMeters =
+            earth.physical.radiusMeters + 1000.0;
         world.registry.emplace<JumpPointComponent>(world.primaryPlanet, earthJumpPoint);
-
-        PlanetVisualComponent visual;
-        visual.material.deepOceanColor = {0.006f, 0.022f, 0.055f};
-        visual.material.shallowOceanColor = {0.020f, 0.100f, 0.145f};
-        visual.material.oceanRoughness = 0.10f;
-        visual.material.lowLandColor = {0.08f, 0.20f, 0.055f};
-        visual.material.highLandColor = {0.38f, 0.30f, 0.17f};
-        visual.material.landRoughness = 0.82f;
-        visual.material.continentScale = 2.4f;
-        visual.material.detailScale = 10.0f;
-        visual.material.oceanLevel = 0.56f;
-        visual.material.coastWidth = 0.018f;
-        visual.material.seed = 13.37f;
-        world.registry.emplace<PlanetVisualComponent>(world.primaryPlanet, visual);
 
         world.primaryStar = world.registry.create();
         PrimaryStarComponent star;
@@ -116,7 +111,7 @@ namespace SpaceSim
         world.localBubbleOriginMeters = glm::dvec3(
             0.0,
             0.0,
-            planet.radiusMeters * 6.0);
+            earth.physical.radiusMeters * 6.0);
 
         world.playerShip = world.registry.create();
 

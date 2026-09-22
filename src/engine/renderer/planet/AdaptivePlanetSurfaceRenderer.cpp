@@ -492,6 +492,8 @@ namespace
         const glm::vec3& direction,
         const SpaceSim::PlanetMaterial& material)
     {
+        return SpaceSim::samplePlanetSurface(direction, material).radiusScale;
+
         const glm::vec3 seedOffset
         {
             material.seed
@@ -612,6 +614,10 @@ namespace
 
         const float elevationFraction =
             landMask
+            *
+            std::max(
+                material.terrainReliefScale,
+                0.0f)
             *
             (
                 0.00030f
@@ -1424,7 +1430,11 @@ namespace SpaceSim
                 &&
                 terrainMaterial.coastWidth
                     ==
-                    material.coastWidth;
+                    material.coastWidth
+                &&
+                terrainMaterial.terrainReliefScale
+                    ==
+                    material.terrainReliefScale;
         }
 
 
@@ -1970,7 +1980,7 @@ namespace SpaceSim
         }
 
 
-        if (!planet.useAdaptiveTerrain)
+        if (!planet.useAdaptiveTerrain && !planet.surfaceFrameValid)
         {
             planet.mesh->draw();
 

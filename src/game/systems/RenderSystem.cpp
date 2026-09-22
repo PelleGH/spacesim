@@ -1,215 +1,957 @@
-#include "systems/RenderSystem.h"
+#include "game/rendering/RenderSystem.h"
 
-#include "components/RenderableComponent.h"
-#include "components/TransformComponent.h"
+#include "game/ecs/components/CameraComponent.h"
+#include "game/ecs/components/GlobalPositionComponent.h"
+#include "game/ecs/components/LightingComponents.h"
+#include "game/ecs/components/PlanetComponents.h"
+#include "game/ecs/components/PreviousTransformComponent.h"
+#include "game/ecs/components/RenderableComponent.h"
+#include "game/ecs/components/ScaleReferenceComponent.h"
+#include "game/ecs/components/TransformComponent.h"
+#include "game/rendering/GameRenderResources.h"
+#include "game/world/SpaceScale.h"
+
+#include "renderer/RenderCamera.h"
+#include "renderer/SceneRenderer.h"
+#include "renderer/atmosphere/AtmosphereInstance.h"
+#include "renderer/lighting/DirectionalLight.h"
+#include "renderer/lighting/EnvironmentLight.h"
+
+#include <glm/common.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/geometric.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
 #include <cmath>
-#include <raylib.h>
-#include <raymath.h>
-#include <rlgl.h>
+#include <stdexcept>
+
 
 namespace SpaceSim
 {
-    OrbitalPlanetRenderInfo RenderSystem::getActiveOrbitalPlanetRenderInfo(
-        const GameWorld& world) const
+    namespace
     {
-        OrbitalPlanetRenderInfo info{};
-
-        const PlanetTransitionState& transition = world.planetTransition;
-
-        if (transition.mode == PlanetRenderMode::Distant)
+        glm::vec3 metersToRender(
+            const glm::dvec3& meters)
         {
-            return info;
+            return
+                glm::vec3(
+                    meters)
+                *
+                SpaceScale::RenderUnitsPerLocalMeter;
         }
 
-        if (transition.closestPlanetIndex < 0 ||
-            transition.closestPlanetIndex >= static_cast<int>(world.starSystem.objects.size()))
+
+        glm::vec3 metersToRender(
+            const glm::vec3& meters)
         {
-            return info;
+            return
+                meters
+                *
+                SpaceScale::RenderUnitsPerLocalMeter;
         }
 
-        const GlobalObject& planet = world.starSystem.objects[transition.closestPlanetIndex];
 
-        if (planet.type != GlobalObjectType::Planet)
+        glm::mat4 cameraRelativeWorldMatrix(
+            const TransformComponent& transform,
+            const glm::dvec3& cameraPositionMeters)
         {
-            return info;
+            const glm::dvec3 relativeMeters =
+                transform.positionMeters
+                -
+                cameraPositionMeters;
+
+
+            return
+                glm::translate(
+                    glm::mat4(
+                        1.0f),
+                    metersToRender(
+                        relativeMeters))
+                *
+                glm::mat4_cast(
+                    transform.rotation)
+                *
+                glm::scale(
+                    glm::mat4(
+                        1.0f),
+                    transform.scale);
         }
 
-        const DVec3 relativeGlobal = planet.position - world.globalPlayerPosition;
-        const double centerDistance = Length(relativeGlobal);
 
-        if (centerDistance <= 0.000001)
+        PbrMaterial materialFrom(
+            const RenderableComponent& renderable)
         {
-            return info;
+            PbrMaterial material;
+
+            material.baseColor =
+                renderable.baseColor;
+
+            material.metallic =
+                renderable.metallic;
+
+            material.roughness =
+                renderable.roughness;
+
+
+            return
+                material;
         }
 
-        const DVec3 directionGlobal = Normalize(relativeGlobal);
-        const Vector3 direction{
-            static_cast<float>(directionGlobal.x),
-            static_cast<float>(directionGlobal.y),
-            static_cast<float>(directionGlobal.z)
-        };
 
-        constexpr float orbitalRenderDistance = 700.0f;
-
-        const double angularRadius = std::atan2(planet.visualRadius, centerDistance);
-
-        info.radius = std::max(
-            1.0f,
-            static_cast<float>(std::tan(angularRadius) * orbitalRenderDistance));
-
-        info.position = Vector3Add(
-            world.camera.position,
-            Vector3Scale(direction, orbitalRenderDistance));
-
-        info.valid = true;
-        return info;
-    }
-
-    void RenderSystem::drawActiveOrbitalPlanet(GameWorld& world, bool drawSurface)
-    {
-        const PlanetTransitionState& transition = world.planetTransition;
-
-        if (transition.mode == PlanetRenderMode::Distant)
+        void pushBoxRenderUnits(
+            std::vector<RenderObject>& objects,
+            const GpuMesh& box,
+            const glm::mat4& root,
+            const glm::vec3& localPositionRenderUnits,
+            const glm::vec3& localSizeRenderUnits,
+            const PbrMaterial& material)
         {
-            return;
+            RenderObject object;
+
+            object.mesh =
+                &box;
+
+
+            object.modelMatrix =
+                root
+                *
+                glm::translate(
+                    glm::mat4(
+                        1.0f),
+                    localPositionRenderUnits)
+                *
+                glm::scale(
+                    glm::mat4(
+                        1.0f),
+                    localSizeRenderUnits);
+
+
+            object.material =
+                material;
+
+
+            objects.push_back(
+                object);
         }
 
-        if (transition.closestPlanetIndex < 0 ||
-            transition.closestPlanetIndex >= static_cast<int>(world.starSystem.objects.size()))
+
+        void pushBoxMeters(
+            std::vector<RenderObject>& objects,
+            const GpuMesh& box,
+            const glm::mat4& root,
+            const glm::vec3& localPositionMeters,
+            const glm::vec3& localSizeMeters,
+            const PbrMaterial& material)
         {
-            return;
-        }
-
-        const GlobalObject& planet = world.starSystem.objects[transition.closestPlanetIndex];
-        const OrbitalPlanetRenderInfo planetInfo = getActiveOrbitalPlanetRenderInfo(world);
-
-        if (!planetInfo.valid)
-        {
-            return;
-        }
-
-        float atmosphereMultiplier = 1.0f;
-        if (world.atmosphere.insideAtmosphere)
-        {
-            atmosphereMultiplier = 1.5f + world.atmosphere.density * 1.5f;
-        }
-
-        m_distantBodyRenderer.renderLocalPlanet(
-            planet,
-            world.lighting,
-            planetInfo.position,
-            planetInfo.radius,
-            atmosphereMultiplier,
-            world.camera.position, drawSurface, m_showPlanetLayers);
-    }
-
-    void RenderSystem::renderSky(GameWorld& world, Renderer& renderer)
-    {
-        (void)renderer;
-
-        Vector3 cameraForward = Vector3Normalize(Vector3Subtract(
-            world.camera.target,
-            world.camera.position
-        ));
-
-        Camera3D skyCamera{};
-        skyCamera.position = Vector3{ 0.0f, 0.0f, 0.0f };
-        skyCamera.target = cameraForward;
-        skyCamera.up = world.camera.up;
-        skyCamera.fovy = world.camera.fovy;
-        skyCamera.projection = world.camera.projection;
-
-        BeginMode3D(skyCamera);
-
-        rlDisableDepthTest();
-        rlDisableDepthMask();
-
-        m_spaceBackgroundRenderer.render(skyCamera);
-        rlDrawRenderBatchActive();
-        rlSetTexture(0);
-
-        rlEnableDepthTest();
-        rlEnableDepthMask();
-
-        m_distantBodyRenderer.render(world);
-        rlDrawRenderBatchActive();
-
-        rlEnableDepthMask();
-        rlEnableDepthTest();
-
-        EndMode3D();
-    }
-
-    void RenderSystem::renderWorld(GameWorld& world, Renderer& renderer)
-    {
-        (void)renderer;
-
-        if (world.travelMode == TravelMode::FTLTravel)
-        {
-            return;
-        }
-
-        const OrbitalPlanetRenderInfo planetInfo = getActiveOrbitalPlanetRenderInfo(world);
-        if (IsKeyPressed(KEY_F6)) m_useAdaptivePlanet = !m_useAdaptivePlanet;
-        if (IsKeyPressed(KEY_F7)) m_showPlanetLayers = !m_showPlanetLayers;
-        if (IsKeyPressed(KEY_F8)) m_terrainLightingMode = (m_terrainLightingMode + 1) % 3;
-        bool adaptiveReady = false;
-        if (m_useAdaptivePlanet && planetInfo.valid) {
-            const auto& planet = world.starSystem.objects[world.planetTransition.closestPlanetIndex];
-            adaptiveReady = m_adaptivePlanet.update(planet, planetInfo.position, planetInfo.radius,
-                world.camera, GetScreenHeight());
-            if (adaptiveReady) m_adaptivePlanet.draw(planet, world.lighting, planetInfo.position,
-                planetInfo.radius, world.camera.position, m_terrainLightingMode);
-        }
-        if (!adaptiveReady) {
-            m_surfacePatch.update(world, planetInfo, m_terrainLightingMode);
-            m_surfacePatch.draw();
-        }
-        // Once roots are resident the adaptive tree replaces the entire local globe.
-        drawActiveOrbitalPlanet(world, !adaptiveReady);
-
-        auto view = world.registry.view<TransformComponent, RenderableComponent>();
-
-        for (auto entity : view)
-        {
-            const auto& transform = view.get<TransformComponent>(entity);
-            const auto& renderable = view.get<RenderableComponent>(entity);
-
-            m_prototypeMeshRenderer.render(transform, renderable);
+            pushBoxRenderUnits(
+                objects,
+                box,
+                root,
+                metersToRender(
+                    localPositionMeters),
+                metersToRender(
+                    localSizeMeters),
+                material);
         }
     }
 
-    void RenderSystem::renderAtmosphereOverlay(GameWorld& world, Renderer& renderer)
+
+    void RenderSystem::render(
+        GameWorld& world,
+        SceneRenderer& renderer,
+        const GameRenderResources& resources,
+        int width,
+        int height)
     {
-        (void)renderer;
-
-        if (world.planetTransition.mode != PlanetRenderMode::Distant) {
-            const char* lightingMode = m_terrainLightingMode == 0 ? "Albedo" :
-                (m_terrainLightingMode == 1 ? "Normals" : "Lit");
-            DrawText(TextFormat("Planet: %s [F6]   Layers: %s [F7]   Terrain: %s [F8]",
-                m_useAdaptivePlanet ? "Adaptive" : "Original",
-                m_showPlanetLayers ? "On" : "Off", lightingMode),
-                12, GetScreenHeight()-26, 16, LIGHTGRAY);
-        }
-        if (!world.atmosphere.insideAtmosphere || !m_showPlanetLayers)
+        if (
+            world.activeCamera
+                ==
+                entt::null
+            ||
+            !world.registry.valid(
+                world.activeCamera)
+            ||
+            !world.registry.all_of<
+                TransformComponent,
+                CameraComponent>(
+                    world.activeCamera))
         {
-            return;
+            throw std::runtime_error(
+                "RenderSystem requires an active camera entity.");
         }
 
-        const float density = Clamp(world.atmosphere.density, 0.0f, 1.0f);
-        const float hazeStrength = density * density;
 
-        // Most aerial perspective is handled by the planet material. Keep this
-        // full-screen tint subtle so it does not wash out nearby terrain.
-        const unsigned char alpha = static_cast<unsigned char>(hazeStrength * 8.0f);
+        const auto& cameraTransform =
+            world.registry.get<
+                TransformComponent>(
+                    world.activeCamera);
 
-        DrawRectangle(
-            0,
-            0,
-            GetScreenWidth(),
-            GetScreenHeight(),
-            Color{ 80, 145, 205, alpha });
+
+        const auto& cameraComponent =
+            world.registry.get<
+                CameraComponent>(
+                    world.activeCamera);
+
+
+        // =========================================================
+        // CAMERA
+        // =========================================================
+        //
+        // Render space is camera-relative.
+        //
+        // The game continues to work in physical metres and
+        // double-precision global coordinates.
+        //
+        // The camera itself is always the float-space origin.
+        //
+
+        RenderCamera camera;
+
+
+        camera.position =
+            glm::vec3(
+                0.0f);
+
+
+        camera.forward =
+            glm::normalize(
+                cameraTransform.rotation
+                *
+                glm::vec3(
+                    0.0f,
+                    0.0f,
+                    -1.0f));
+
+
+        camera.up =
+            glm::normalize(
+                cameraTransform.rotation
+                *
+                glm::vec3(
+                    0.0f,
+                    1.0f,
+                    0.0f));
+
+
+        camera.verticalFovDegrees =
+            cameraComponent.verticalFovDegrees;
+
+
+        camera.nearPlane =
+            std::max(
+                0.00001f,
+                cameraComponent.nearClipMeters
+                *
+                SpaceScale::RenderUnitsPerLocalMeter);
+
+
+        camera.farPlane =
+            std::max(
+                SpaceScale::MinimumRenderFarPlane,
+                cameraComponent.farClipMeters
+                *
+                SpaceScale::RenderUnitsPerLocalMeter);
+
+
+        const glm::dvec3 cameraGlobalMeters =
+            world.localToGlobalMeters(
+                cameraTransform.positionMeters);
+
+
+        // =========================================================
+        // LIGHTING
+        // =========================================================
+
+        DirectionalLight sun;
+
+
+        if (
+            world.primaryStar
+                !=
+                entt::null
+            &&
+            world.registry.valid(
+                world.primaryStar)
+            &&
+            world.registry.all_of<
+                PrimaryStarComponent>(
+                    world.primaryStar))
+        {
+            const auto& star =
+                world.registry.get<
+                    PrimaryStarComponent>(
+                        world.primaryStar);
+
+
+            sun.direction =
+                glm::normalize(
+                    star.direction);
+
+
+            sun.radiance =
+                star.radiance;
+        }
+
+
+        EnvironmentLight environment;
+
+        environment.diffuseMultiplier =
+            glm::vec3(
+                0.0f);
+
+        environment.specularMultiplier =
+            glm::vec3(
+                0.0f);
+
+
+        m_planets.clear();
+        m_objects.clear();
+
+
+        AtmosphereInstance atmosphereInstance;
+
+        const AtmosphereInstance* activeAtmosphere =
+            nullptr;
+
+
+        // =========================================================
+        // GLOBAL PLANETS -> RENDER REPRESENTATIONS
+        // =========================================================
+        //
+        // Far away:
+        //
+        //     compact angular-size representation.
+        //
+        // Near body:
+        //
+        //     true camera-relative center and physical radius.
+        //
+        // Near surface:
+        //
+        //     additionally provide a small, stable local surface
+        //     frame generated directly from double-precision
+        //     coordinates.
+        //
+        // This final surface frame is what the local ocean renderer
+        // consumes.
+        //
+
+        const auto planetView =
+            world.registry.view<
+                GlobalPositionComponent,
+                PlanetComponent,
+                PlanetVisualComponent>();
+
+
+        for (
+            const entt::entity entity :
+            planetView)
+        {
+            const auto& globalPosition =
+                planetView.get<
+                    GlobalPositionComponent>(
+                        entity);
+
+
+            const auto& planet =
+                planetView.get<
+                    PlanetComponent>(
+                        entity);
+
+
+            const auto& visual =
+                planetView.get<
+                    PlanetVisualComponent>(
+                        entity);
+
+
+            const glm::dvec3 relativeMeters =
+                globalPosition.positionMeters
+                -
+                cameraGlobalMeters;
+
+
+            const double physicalDistanceMeters =
+                glm::length(
+                    relativeMeters);
+
+
+            if (
+                physicalDistanceMeters
+                    <=
+                    1.0
+                ||
+                planet.properties.physical.radiusMeters
+                    <=
+                    0.0)
+            {
+                continue;
+            }
+
+
+            const glm::vec3 direction =
+                glm::normalize(
+                    glm::vec3(
+                        relativeMeters));
+
+
+            const double altitudeMeters =
+                physicalDistanceMeters
+                -
+                planet.properties.physical.radiusMeters;
+
+
+            const bool useNearBody =
+                altitudeMeters
+                <=
+                SpaceScale::
+                    NearBodyTransitionAltitudeMeters;
+
+
+            glm::vec3 center(
+                0.0f);
+
+
+            float renderRadius =
+                0.0f;
+
+
+            // =====================================================
+            // NEAR-BODY REPRESENTATION
+            // =====================================================
+
+            if (useNearBody)
+            {
+                center =
+                    metersToRender(
+                        relativeMeters);
+
+
+                renderRadius =
+                    static_cast<float>(
+                        planet.properties.physical.radiusMeters
+                        *
+                        static_cast<double>(
+                            SpaceScale::
+                                RenderUnitsPerLocalMeter));
+
+
+                const double atmosphereThicknessMeters =
+                    world.registry.all_of<
+                        AtmosphereComponent>(
+                            entity)
+                        ?
+                        std::max(
+                            0.0,
+                            static_cast<double>(
+                                world.registry.get<
+                                    AtmosphereComponent>(
+                                        entity)
+                                    .parameters
+                                    .topRadiusKm
+                                -
+                                world.registry.get<
+                                    AtmosphereComponent>(
+                                        entity)
+                                    .parameters
+                                    .bottomRadiusKm)
+                            *
+                            SpaceScale::
+                                MetersPerKilometer)
+                        :
+                        0.0;
+
+
+                const double requiredFarMeters =
+                    physicalDistanceMeters
+                    +
+                    planet.properties.physical.radiusMeters
+                    +
+                    atmosphereThicknessMeters
+                    +
+                    10000.0;
+
+
+                camera.farPlane =
+                    std::max(
+                        camera.farPlane,
+                        static_cast<float>(
+                            requiredFarMeters
+                            *
+                            static_cast<double>(
+                                SpaceScale::
+                                    RenderUnitsPerLocalMeter)));
+            }
+
+            // =====================================================
+            // DISTANT-BODY REPRESENTATION
+            // =====================================================
+
+            else
+            {
+                const double radiusDistanceRatio =
+                    planet.properties.physical.radiusMeters
+                    /
+                    physicalDistanceMeters;
+
+
+                renderRadius =
+                    SpaceScale::
+                        DistantBodyCenterRenderUnits
+                    *
+                    static_cast<float>(
+                        radiusDistanceRatio);
+
+
+                center =
+                    direction
+                    *
+                    SpaceScale::
+                        DistantBodyCenterRenderUnits;
+            }
+
+
+            // =====================================================
+            // PLANET RENDER OBJECT
+            // =====================================================
+
+            PlanetRenderObject renderPlanet;
+
+
+            renderPlanet.mesh =
+                &resources.planetSphere();
+
+
+            renderPlanet.modelMatrix =
+                glm::translate(
+                    glm::mat4(
+                        1.0f),
+                    center)
+                *
+                glm::scale(
+                    glm::mat4(
+                        1.0f),
+                    glm::vec3(
+                        renderRadius));
+
+
+            renderPlanet.material =
+                visual.material;
+
+
+            renderPlanet.hasOcean =
+                planet.properties.surface.hasLiquidOcean;
+
+
+            renderPlanet.radiusKm =
+                static_cast<float>(
+                    planet.properties.physical.radiusMeters
+                    /
+                    SpaceScale::
+                        MetersPerKilometer);
+
+
+            renderPlanet
+                .oceanGravityMetersPerSecondSquared =
+                    planet
+                        .properties
+                        .physical
+                        .surfaceGravityMetersPerSecondSquared;
+
+
+            // =====================================================
+            // STABLE NEAR-SURFACE FRAME
+            // =====================================================
+            //
+            // The old local ocean code reconstructed its anchor
+            // using:
+            //
+            //     planetCenter - camera + planetRadius
+            //
+            // after everything had already become floats.
+            //
+            // At Earth scale that means trying to recover ~8 km
+            // from values around ~6,360 km.
+            //
+            // That is exactly the sort of cancellation which can
+            // turn tiny precision changes into visible wave
+            // twitching.
+            //
+            // Instead, calculate the surface point directly here,
+            // while everything is still double precision.
+            //
+            // For now the local surface frame activates below
+            // 24 km.
+            //
+
+            constexpr double surfaceFrameAltitudeMeters =
+                24000.0;
+
+
+            if (
+                altitudeMeters
+                    >=
+                    0.0
+                &&
+                altitudeMeters
+                    <=
+                    surfaceFrameAltitudeMeters)
+            {
+                const glm::dvec3 cameraFromPlanetMeters =
+                    cameraGlobalMeters
+                    -
+                    globalPosition.positionMeters;
+
+
+                const double cameraFromPlanetLengthMeters =
+                    glm::length(
+                        cameraFromPlanetMeters);
+
+
+                if (
+                    cameraFromPlanetLengthMeters
+                        >
+                        1.0)
+                {
+                    const glm::dvec3 surfaceUp =
+                        cameraFromPlanetMeters
+                        /
+                        cameraFromPlanetLengthMeters;
+
+
+                    // The sea-level point directly beneath the
+                    // camera is simply altitude metres toward the
+                    // planet.
+                    //
+                    // This remains a small number even though the
+                    // planet itself is enormous.
+                    const glm::dvec3 anchorRelativeMeters =
+                        -surfaceUp
+                        *
+                        altitudeMeters;
+
+
+                    renderPlanet.surfaceFrameValid =
+                        true;
+
+
+                    renderPlanet.surfaceAltitudeKm =
+                        static_cast<float>(
+                            altitudeMeters
+                            /
+                            SpaceScale::
+                                MetersPerKilometer);
+
+
+                    renderPlanet.surfaceAnchorNormalWorld =
+                        glm::vec3(
+                            surfaceUp);
+
+
+                    renderPlanet.surfaceAnchorRelativeWorld =
+                        metersToRender(
+                            anchorRelativeMeters);
+                }
+            }
+
+
+            m_planets.push_back(
+                renderPlanet);
+
+
+            // =====================================================
+            // ATMOSPHERE
+            // =====================================================
+
+            if (
+                activeAtmosphere
+                    ==
+                    nullptr
+                &&
+                world.registry.all_of<
+                    AtmosphereComponent>(
+                        entity))
+            {
+                const auto& atmosphere =
+                    world.registry.get<
+                        AtmosphereComponent>(
+                            entity);
+
+
+                if (atmosphere.enabled)
+                {
+                    atmosphereInstance.parameters =
+                        &atmosphere.parameters;
+
+
+                    atmosphereInstance.luts =
+                        &resources.atmosphereLuts();
+
+
+                    atmosphereInstance.planetCenterWorld =
+                        center;
+
+
+                    atmosphereInstance.planetRadiusWorld =
+                        renderRadius;
+
+
+                    activeAtmosphere =
+                        &atmosphereInstance;
+                }
+            }
+        }
+
+
+        // =========================================================
+        // LOCAL GAMEPLAY OBJECTS
+        // =========================================================
+
+        const auto renderableView =
+            world.registry.view<
+                TransformComponent,
+                RenderableComponent>();
+
+
+        for (
+            const entt::entity entity :
+            renderableView)
+        {
+            const TransformComponent transform =
+                interpolatedTransform(
+                    world.registry,
+                    entity,
+                    world.renderInterpolationAlpha);
+
+
+            const auto& renderable =
+                renderableView.get<
+                    RenderableComponent>(
+                        entity);
+
+
+            if (
+                renderable.mesh
+                    !=
+                    RenderMeshKind::
+                        PlaceholderShip)
+            {
+                continue;
+            }
+
+
+            const glm::mat4 root =
+                cameraRelativeWorldMatrix(
+                    transform,
+                    cameraTransform.positionMeters);
+
+
+            const PbrMaterial hull =
+                materialFrom(
+                    renderable);
+
+
+            PbrMaterial dark =
+                hull;
+
+
+            dark.baseColor *=
+                0.42f;
+
+
+            dark.roughness =
+                0.42f;
+
+
+            PbrMaterial engine;
+
+
+            engine.baseColor =
+                glm::vec3(
+                    0.04f,
+                    0.08f,
+                    0.11f);
+
+
+            engine.metallic =
+                0.25f;
+
+
+            engine.roughness =
+                0.25f;
+
+
+            engine.emissiveColor =
+                glm::vec3(
+                    0.18f,
+                    0.62f,
+                    1.0f);
+
+
+            engine.emissiveStrength =
+                12.0f;
+
+
+            const GpuMesh& box =
+                resources.placeholderBox();
+
+
+            // ~28 metre temporary ship.
+            //
+            // All dimensions here are physical metres.
+            //
+            // Forward is local -Z and the engine is on +Z.
+
+            pushBoxMeters(
+                m_objects,
+                box,
+                root,
+                {
+                    0.0f,
+                    0.0f,
+                    0.0f
+                },
+                {
+                    5.5f,
+                    3.2f,
+                    20.0f
+                },
+                hull);
+
+
+            pushBoxMeters(
+                m_objects,
+                box,
+                root,
+                {
+                    0.0f,
+                    0.25f,
+                    -12.5f
+                },
+                {
+                    4.0f,
+                    2.6f,
+                    7.0f
+                },
+                hull);
+
+
+            pushBoxMeters(
+                m_objects,
+                box,
+                root,
+                {
+                    0.0f,
+                    -0.20f,
+                    1.0f
+                },
+                {
+                    17.0f,
+                    0.7f,
+                    7.5f
+                },
+                dark);
+
+
+            pushBoxMeters(
+                m_objects,
+                box,
+                root,
+                {
+                    0.0f,
+                    0.0f,
+                    11.0f
+                },
+                {
+                    4.2f,
+                    2.5f,
+                    2.0f
+                },
+                engine);
+        }
+
+
+        // =========================================================
+        // TEMPORARY SCALE REFERENCES
+        // =========================================================
+
+        const auto referenceView =
+            world.registry.view<
+                TransformComponent,
+                ScaleReferenceComponent>();
+
+
+        for (
+            const entt::entity entity :
+            referenceView)
+        {
+            const auto& transform =
+                referenceView.get<
+                    TransformComponent>(
+                        entity);
+
+
+            const auto& reference =
+                referenceView.get<
+                    ScaleReferenceComponent>(
+                        entity);
+
+
+            const glm::mat4 root =
+                cameraRelativeWorldMatrix(
+                    transform,
+                    cameraTransform.positionMeters);
+
+
+            PbrMaterial material;
+
+
+            material.baseColor =
+                reference.baseColor;
+
+
+            material.metallic =
+                0.12f;
+
+
+            material.roughness =
+                0.52f;
+
+
+            material.emissiveColor =
+                reference.baseColor;
+
+
+            material.emissiveStrength =
+                reference.emissiveStrength;
+
+
+            pushBoxMeters(
+                m_objects,
+                resources.placeholderBox(),
+                root,
+                glm::vec3(
+                    0.0f),
+                reference.sizeMeters,
+                material);
+        }
+
+
+        // =========================================================
+        // DRAW
+        // =========================================================
+
+        renderer.render(
+            width,
+            height,
+            camera,
+            sun,
+            environment,
+            resources.environmentMap(),
+            resources.environmentIbl(),
+            m_planets,
+            m_objects,
+            activeAtmosphere);
     }
 }

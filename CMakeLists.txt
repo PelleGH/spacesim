@@ -130,6 +130,7 @@ add_executable(SpaceSim
 
     src/game/runtime/GameApplication.cpp
     src/game/bootstrap/PrototypeWorld.cpp
+    src/game/planet/PlanetGeneration.cpp
     src/game/rendering/GameRenderResources.cpp
     src/game/rendering/RenderSystem.cpp
     src/game/systems/PlayerControlSystem.cpp

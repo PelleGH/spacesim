@@ -92,6 +92,12 @@ namespace SpaceSim
         float coastWidth =
             0.018f;
 
+        // Scales only geometric terrain relief. It is intentionally separate
+        // from continent/detail frequencies so a planet can keep the same
+        // geography while becoming flatter or more mountainous.
+        float terrainReliefScale =
+            1.0f;
+
         // Different procedural planets can share the same shader
         // while producing different geography and wave phases.
         float seed =
