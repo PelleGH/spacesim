@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderer/atmosphere/AtmosphereParameters.h"
+#include "renderer/cloud/CloudParameters.h"
 #include "renderer/planet/PlanetMaterial.h"
 
 namespace SpaceSim
@@ -23,6 +24,13 @@ namespace SpaceSim
     struct AtmosphereComponent
     {
         AtmosphereParameters parameters = makeEarthLikeAtmosphere();
+        bool enabled = true;
+    };
+
+
+    struct CloudComponent
+    {
+        CloudParameters parameters = makeEarthLikeClouds();
         bool enabled = true;
     };
 }

@@ -26,6 +26,34 @@ namespace SpaceSim
 
 
         // =========================================================
+        // SEMANTIC ALTITUDE BANDS
+        // =========================================================
+        //
+        // These are NOT extra rendered spheres.
+        //
+        // They are common physical altitude references that later systems
+        // can share:
+        //
+        // clouds
+        // weather
+        // atmospheric flight
+        // drag
+        // re-entry
+        // visual effects
+        //
+        // The actual Hillaire scattering atmosphere remains continuous.
+
+        float troposphereTopAltitudeKm =
+            12.0f;
+
+        float stratosphereTopAltitudeKm =
+            50.0f;
+
+        float mesosphereTopAltitudeKm =
+            85.0f;
+
+
+        // =========================================================
         // RAYLEIGH SCATTERING
         // =========================================================
 

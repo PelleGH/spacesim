@@ -571,7 +571,8 @@ namespace SpaceSim
 
                     atmosphereInstance.planetRadiusWorld =
                         renderRadius;
-
+                    if (world.registry.all_of<CloudComponent>(entity) && world.registry.get<CloudComponent>(entity).enabled)
+                        atmosphereInstance.cloudParameters = &world.registry.get<CloudComponent>(entity).parameters;
                     activeAtmosphere =
                         &atmosphereInstance;
                 }

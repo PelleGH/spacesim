@@ -11,7 +11,7 @@
 #include "renderer/atmosphere/AtmosphereInstance.h"
 #include "renderer/atmosphere/AtmospherePass.h"
 #include "renderer/atmosphere/AtmosphereViewLuts.h"
-
+#include "renderer/cloud/CloudPass.h"
 #include "renderer/lighting/DirectionalLight.h"
 #include "renderer/lighting/EnvironmentLight.h"
 
@@ -26,14 +26,12 @@
 
 #include <vector>
 
-
 namespace SpaceSim
 {
     class SceneRenderer
     {
     public:
         SceneRenderer();
-
 
         // Existing-compatible overload.
         //
@@ -42,35 +40,31 @@ namespace SpaceSim
         void render(
             int width,
             int height,
-            const RenderCamera& camera,
-            const DirectionalLight& sun,
-            const EnvironmentLight& environment,
-            const GlTextureCube& environmentMap,
-            const EnvironmentIbl& environmentIbl,
-            const std::vector<RenderObject>& objects,
-            const AtmosphereInstance* atmosphere = nullptr);
-
+            const RenderCamera &camera,
+            const DirectionalLight &sun,
+            const EnvironmentLight &environment,
+            const GlTextureCube &environmentMap,
+            const EnvironmentIbl &environmentIbl,
+            const std::vector<RenderObject> &objects,
+            const AtmosphereInstance *atmosphere = nullptr);
 
         // New dedicated-planet overload.
         void render(
             int width,
             int height,
-            const RenderCamera& camera,
-            const DirectionalLight& sun,
-            const EnvironmentLight& environment,
-            const GlTextureCube& environmentMap,
-            const EnvironmentIbl& environmentIbl,
-            const std::vector<PlanetRenderObject>& planets,
-            const std::vector<RenderObject>& objects,
-            const AtmosphereInstance* atmosphere = nullptr);
-
+            const RenderCamera &camera,
+            const DirectionalLight &sun,
+            const EnvironmentLight &environment,
+            const GlTextureCube &environmentMap,
+            const EnvironmentIbl &environmentIbl,
+            const std::vector<PlanetRenderObject> &planets,
+            const std::vector<RenderObject> &objects,
+            const AtmosphereInstance *atmosphere = nullptr);
 
         float exposure() const
         {
-            return
-                m_exposureCompensation;
+            return m_exposureCompensation;
         }
-
 
         void setExposure(
             float exposureCompensation)
@@ -79,7 +73,6 @@ namespace SpaceSim
                 exposureCompensation;
         }
 
-
         void setAutoExposureEnabled(
             bool enabled)
         {
@@ -87,13 +80,10 @@ namespace SpaceSim
                 enabled;
         }
 
-
         bool autoExposureEnabled() const
         {
-            return
-                m_autoExposureEnabled;
+            return m_autoExposureEnabled;
         }
-
 
         void setBloomStrength(
             float strength)
@@ -102,14 +92,12 @@ namespace SpaceSim
                 strength;
         }
 
-
         void setBloomThreshold(
             float threshold)
         {
             m_bloomPass.setThreshold(
                 threshold);
         }
-
 
         void setAtmosphereLightingEnabled(
             bool enabled)
@@ -118,13 +106,10 @@ namespace SpaceSim
                 enabled;
         }
 
-
         bool atmosphereLightingEnabled() const
         {
-            return
-                m_atmosphereLightingEnabled;
+            return m_atmosphereLightingEnabled;
         }
-
 
         void setAtmosphereSpecularEnabled(
             bool enabled)
@@ -133,65 +118,48 @@ namespace SpaceSim
                 enabled;
         }
 
-
         bool atmosphereSpecularEnabled() const
         {
-            return
-                m_atmosphereSpecularEnabled;
+            return m_atmosphereSpecularEnabled;
         }
-
 
     private:
         HdrRenderTarget m_hdrTarget;
-
 
         GlShader m_pbrShader;
 
         GlShader m_shadowShader;
 
-
         ShadowMap m_shadowMap;
-
 
         EnvironmentPass m_environmentPass;
 
-
         StarPass m_starPass;
-
 
         PlanetPass m_planetPass;
 
-
         AtmosphereViewLuts m_atmosphereViewLuts;
-
 
         AtmospherePass m_atmospherePass;
 
-
+        CloudPass m_cloudPass;
         AutoExposurePass m_autoExposurePass;
-
 
         BloomPass m_bloomPass;
 
-
         PostProcessPass m_postProcess;
-
 
         float m_exposureCompensation =
             1.0f;
 
-
         float m_bloomStrength =
             0.12f;
-
 
         bool m_autoExposureEnabled =
             true;
 
-
         bool m_atmosphereLightingEnabled =
             true;
-
 
         bool m_atmosphereSpecularEnabled =
             true;

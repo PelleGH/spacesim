@@ -1,0 +1,614 @@
+#version 450 core
+
+layout(
+    local_size_x = 4,
+    local_size_y = 4,
+    local_size_z = 4)
+in;
+
+
+layout(
+    rgba8,
+    binding = 0)
+uniform writeonly image3D outBaseShape;
+
+
+uniform int noiseSeed;
+
+
+// =============================================================
+// HASHING
+// =============================================================
+
+uint hashUint(
+    uint value)
+{
+    value +=
+        uint(noiseSeed) *
+        374761393u;
+
+
+    value =
+        (value ^ (value >> 16u)) *
+        2246822519u;
+
+
+    value =
+        (value ^ (value >> 13u)) *
+        3266489917u;
+
+
+    value ^=
+        value >> 16u;
+
+
+    return
+        value;
+}
+
+
+uint hashCell(
+    ivec3 cell)
+{
+    uint value =
+        uint(cell.x) *
+        73856093u;
+
+
+    value ^=
+        uint(cell.y) *
+        19349663u;
+
+
+    value ^=
+        uint(cell.z) *
+        83492791u;
+
+
+    return
+        hashUint(
+            value);
+}
+
+
+float hash01(
+    uint value)
+{
+    return
+        float(
+            value &
+            0x00ffffffu)
+        /
+        float(
+            0x01000000u);
+}
+
+
+vec3 random3(
+    ivec3 cell)
+{
+    uint base =
+        hashCell(
+            cell);
+
+
+    return
+        vec3(
+            hash01(
+                hashUint(
+                    base + 17u)),
+
+            hash01(
+                hashUint(
+                    base + 59u)),
+
+            hash01(
+                hashUint(
+                    base + 101u)));
+}
+
+
+// =============================================================
+// PERIODIC COORDINATES
+// =============================================================
+
+ivec3 wrapCell(
+    ivec3 cell,
+    int period)
+{
+    ivec3 p =
+        ivec3(
+            period);
+
+
+    return
+        (
+            (
+                cell %
+                p
+            )
+            +
+            p
+        )
+        %
+        p;
+}
+
+
+// =============================================================
+// GRADIENT NOISE
+// =============================================================
+
+vec3 gradientForCell(
+    ivec3 cell,
+    int period)
+{
+    vec3 randomValue =
+        random3(
+            wrapCell(
+                cell,
+                period));
+
+
+    vec3 gradient =
+        randomValue *
+        2.0 -
+        1.0;
+
+
+    float gradientLength =
+        max(
+            length(
+                gradient),
+            0.0001);
+
+
+    return
+        gradient /
+        gradientLength;
+}
+
+
+vec3 quinticFade(
+    vec3 value)
+{
+    return
+        value *
+        value *
+        value *
+        (
+            value *
+            (
+                value *
+                6.0 -
+                15.0
+            )
+            +
+            10.0
+        );
+}
+
+
+float gradientNoise(
+    vec3 position,
+    int period)
+{
+    ivec3 baseCell =
+        ivec3(
+            floor(
+                position));
+
+
+    vec3 local =
+        fract(
+            position);
+
+
+    vec3 fade =
+        quinticFade(
+            local);
+
+
+    float corner000 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(0, 0, 0),
+                period),
+            local -
+                vec3(0.0, 0.0, 0.0));
+
+
+    float corner100 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(1, 0, 0),
+                period),
+            local -
+                vec3(1.0, 0.0, 0.0));
+
+
+    float corner010 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(0, 1, 0),
+                period),
+            local -
+                vec3(0.0, 1.0, 0.0));
+
+
+    float corner110 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(1, 1, 0),
+                period),
+            local -
+                vec3(1.0, 1.0, 0.0));
+
+
+    float corner001 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(0, 0, 1),
+                period),
+            local -
+                vec3(0.0, 0.0, 1.0));
+
+
+    float corner101 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(1, 0, 1),
+                period),
+            local -
+                vec3(1.0, 0.0, 1.0));
+
+
+    float corner011 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(0, 1, 1),
+                period),
+            local -
+                vec3(0.0, 1.0, 1.0));
+
+
+    float corner111 =
+        dot(
+            gradientForCell(
+                baseCell +
+                ivec3(1, 1, 1),
+                period),
+            local -
+                vec3(1.0, 1.0, 1.0));
+
+
+    float x00 =
+        mix(
+            corner000,
+            corner100,
+            fade.x);
+
+
+    float x10 =
+        mix(
+            corner010,
+            corner110,
+            fade.x);
+
+
+    float x01 =
+        mix(
+            corner001,
+            corner101,
+            fade.x);
+
+
+    float x11 =
+        mix(
+            corner011,
+            corner111,
+            fade.x);
+
+
+    float y0 =
+        mix(
+            x00,
+            x10,
+            fade.y);
+
+
+    float y1 =
+        mix(
+            x01,
+            x11,
+            fade.y);
+
+
+    float result =
+        mix(
+            y0,
+            y1,
+            fade.z);
+
+
+    return
+        clamp(
+            result *
+            0.75 +
+            0.5,
+            0.0,
+            1.0);
+}
+
+
+// =============================================================
+// WORLEY
+// =============================================================
+
+float worleyNoise(
+    vec3 position,
+    int period)
+{
+    ivec3 baseCell =
+        ivec3(
+            floor(
+                position));
+
+
+    float nearestDistance =
+        1000.0;
+
+
+    for (int z = -1;
+         z <= 1;
+         ++z)
+    {
+        for (int y = -1;
+             y <= 1;
+             ++y)
+        {
+            for (int x = -1;
+                 x <= 1;
+                 ++x)
+            {
+                ivec3 neighborOffset =
+                    ivec3(
+                        x,
+                        y,
+                        z);
+
+
+                ivec3 unwrappedCell =
+                    baseCell +
+                    neighborOffset;
+
+
+                ivec3 wrappedCell =
+                    wrapCell(
+                        unwrappedCell,
+                        period);
+
+
+                vec3 featureOffset =
+                    random3(
+                        wrappedCell);
+
+
+                vec3 featurePosition =
+                    vec3(
+                        unwrappedCell)
+                    +
+                    featureOffset;
+
+
+                float distanceToFeature =
+                    length(
+                        featurePosition -
+                        position);
+
+
+                nearestDistance =
+                    min(
+                        nearestDistance,
+                        distanceToFeature);
+            }
+        }
+    }
+
+
+    return
+        1.0 -
+        clamp(
+            nearestDistance /
+            1.7320508,
+            0.0,
+            1.0);
+}
+
+
+// =============================================================
+// LOW-FREQUENCY BASE FBM
+// =============================================================
+//
+// IMPORTANT CHANGE:
+//
+// The base shape should contain LARGE cloud structure.
+//
+// Previously we used:
+//
+//     4
+//     8
+//     16
+//
+// frequency octaves.
+//
+// The 16x octave was contributing heavily to the "leopard skin"
+// appearance visible from orbit.
+//
+// Fine structure belongs in our later erosion/detail texture.
+
+float gradientFbm(
+    vec3 uv)
+{
+    float octave0 =
+        gradientNoise(
+            uv *
+            2.0,
+            2);
+
+
+    float octave1 =
+        gradientNoise(
+            uv *
+            4.0,
+            4);
+
+
+    float octave2 =
+        gradientNoise(
+            uv *
+            8.0,
+            8);
+
+
+    return
+        octave0 *
+        0.625
+        +
+        octave1 *
+        0.250
+        +
+        octave2 *
+        0.125;
+}
+
+
+float worleyFbm(
+    vec3 uv)
+{
+    float octave0 =
+        worleyNoise(
+            uv *
+            2.0,
+            2);
+
+
+    float octave1 =
+        worleyNoise(
+            uv *
+            4.0,
+            4);
+
+
+    float octave2 =
+        worleyNoise(
+            uv *
+            8.0,
+            8);
+
+
+    return
+        octave0 *
+        0.625
+        +
+        octave1 *
+        0.250
+        +
+        octave2 *
+        0.125;
+}
+
+
+// =============================================================
+// MAIN
+// =============================================================
+
+void main()
+{
+    ivec3 textureSizeValue =
+        imageSize(
+            outBaseShape);
+
+
+    ivec3 coordinate =
+        ivec3(
+            gl_GlobalInvocationID.xyz);
+
+
+    if (any(
+        greaterThanEqual(
+            coordinate,
+            textureSizeValue)))
+    {
+        return;
+    }
+
+
+    vec3 uv =
+        (
+            vec3(
+                coordinate)
+            +
+            0.5
+        )
+        /
+        vec3(
+            textureSizeValue);
+
+
+    float gradientShape =
+        gradientFbm(
+            uv);
+
+
+    float cellularShape =
+        worleyFbm(
+            uv);
+
+
+    // =========================================================
+    // BASE CLOUD SHAPE
+    // =========================================================
+    //
+    // Gradient noise does most of the work now.
+    //
+    // Worley only introduces broad cellular character.
+    //
+    // Previously it contributed 30%, which made the base volume
+    // look much too porous.
+    //
+    // Also notice that there is NO smoothstep here anymore.
+    //
+    // We want this texture to contain a continuous density field.
+    // Coverage thresholding belongs later in the ray marcher.
+
+    float baseShape =
+        mix(
+            gradientShape,
+            cellularShape,
+            0.12);
+
+
+    baseShape =
+        clamp(
+            baseShape,
+            0.0,
+            1.0);
+
+
+    imageStore(
+        outBaseShape,
+        coordinate,
+        vec4(
+            baseShape,
+            gradientShape,
+            cellularShape,
+            1.0));
+}

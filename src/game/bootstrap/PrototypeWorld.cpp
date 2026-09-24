@@ -22,7 +22,7 @@ namespace SpaceSim
 {
     namespace
     {
-        glm::quat orientationFromForwardUp(const glm::vec3& forward, const glm::vec3& up)
+        glm::quat orientationFromForwardUp(const glm::vec3 &forward, const glm::vec3 &up)
         {
             const glm::vec3 f = glm::normalize(forward);
             const glm::vec3 right = glm::normalize(glm::cross(f, up));
@@ -36,10 +36,10 @@ namespace SpaceSim
         }
 
         void createScaleReference(
-            GameWorld& world,
-            const glm::dvec3& positionMeters,
-            const glm::vec3& sizeMeters,
-            const glm::vec3& color,
+            GameWorld &world,
+            const glm::dvec3 &positionMeters,
+            const glm::vec3 &sizeMeters,
+            const glm::vec3 &color,
             float emissiveStrength)
         {
             const entt::entity entity = world.registry.create();
@@ -57,7 +57,7 @@ namespace SpaceSim
         }
     }
 
-    void createPrototypeWorld(GameWorld& world)
+    void createPrototypeWorld(GameWorld &world)
     {
         // -----------------------------------------------------------------
         // Global layer: a physically sized Earth-like planet at system origin.
@@ -80,7 +80,7 @@ namespace SpaceSim
         world.registry.emplace<GlobalPositionComponent>(world.primaryPlanet, planetPosition);
         world.registry.emplace<PlanetComponent>(world.primaryPlanet, planet);
         world.registry.emplace<AtmosphereComponent>(world.primaryPlanet, atmosphere);
-
+        world.registry.emplace<CloudComponent>(world.primaryPlanet);
         JumpPointComponent earthJumpPoint;
         earthJumpPoint.displayName = "Earth";
         // First hyperdrive arrival stays just above the atmosphere. The current

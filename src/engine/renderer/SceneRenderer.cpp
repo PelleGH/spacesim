@@ -189,8 +189,10 @@ namespace SpaceSim
         // the atmosphere/star direction logic.
 
         // Shadow maps retain the standard depth convention.
-        glClipControl(GL_LOWER_LEFT,GL_NEGATIVE_ONE_TO_ONE);
-        glDepthFunc(GL_LESS);glDepthMask(GL_TRUE);glClearDepth(1.0);
+        glClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        glClearDepth(1.0);
         m_shadowMap.bindForWriting();
 
         glEnable(
@@ -223,8 +225,10 @@ namespace SpaceSim
 
         // Reversed floating-point depth preserves nearby ships and distant planets.
         m_hdrTarget.bind();
-        glClipControl(GL_LOWER_LEFT,GL_ZERO_TO_ONE);
-        glDepthFunc(GL_GEQUAL);glDepthMask(GL_TRUE);glClearDepth(0.0);
+        glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+        glDepthFunc(GL_GEQUAL);
+        glDepthMask(GL_TRUE);
+        glClearDepth(0.0);
 
         glViewport(
             0,
@@ -498,8 +502,9 @@ namespace SpaceSim
 
         // =========================================================
         // PASS 3: ATMOSPHERE
-        glClipControl(GL_LOWER_LEFT,GL_NEGATIVE_ONE_TO_ONE);
-        glDepthFunc(GL_LESS);glClearDepth(1.0);
+        glClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+        glDepthFunc(GL_LESS);
+        glClearDepth(1.0);
         // =========================================================
 
         GLuint finalHdrTexture =
@@ -519,8 +524,9 @@ namespace SpaceSim
                     *atmosphere,
                     m_atmosphereViewLuts);
         }
-
-        // =========================================================
+        // Temporary debug composite; physical atmosphere/cloud coupling comes next.
+        if (atmosphereActive && atmosphere->cloudsValid())
+            finalHdrTexture = m_cloudPass.render(width, height, finalHdrTexture, m_hdrTarget.linearDepthTexture(), camera, aspect, sun, *atmosphere); // =========================================================
         // PASS 4: AUTO EXPOSURE
         // =========================================================
 

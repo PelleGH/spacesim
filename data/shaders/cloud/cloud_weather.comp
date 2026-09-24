@@ -1,0 +1,646 @@
+#version 450 core
+
+layout(
+    local_size_x = 8,
+    local_size_y = 8,
+    local_size_z = 1)
+in;
+
+
+layout(
+    rgba16f,
+    binding = 0)
+uniform writeonly imageCube outWeatherMap;
+
+
+uniform int weatherSeed;
+
+
+// =============================================================
+// HASH
+// =============================================================
+
+uint hashUint(
+    uint value)
+{
+    value +=
+        uint(weatherSeed) *
+        374761393u;
+
+
+    value =
+        (value ^ (value >> 16u)) *
+        2246822519u;
+
+
+    value =
+        (value ^ (value >> 13u)) *
+        3266489917u;
+
+
+    value ^=
+        value >> 16u;
+
+
+    return
+        value;
+}
+
+
+uint hashCell(
+    ivec3 cell)
+{
+    uint value =
+        uint(cell.x) *
+        73856093u;
+
+
+    value ^=
+        uint(cell.y) *
+        19349663u;
+
+
+    value ^=
+        uint(cell.z) *
+        83492791u;
+
+
+    return
+        hashUint(
+            value);
+}
+
+
+float hash01(
+    ivec3 cell)
+{
+    uint value =
+        hashCell(
+            cell);
+
+
+    return
+        float(
+            value &
+            0x00ffffffu)
+        /
+        float(
+            0x01000000u);
+}
+
+
+// =============================================================
+// VALUE NOISE
+// =============================================================
+//
+// This is deliberately different from our local cloud-shape noise.
+//
+// We only need very broad, smooth structures here.
+
+vec3 smoothInterpolation(
+    vec3 value)
+{
+    return
+        value *
+        value *
+        (
+            3.0 -
+            2.0 *
+            value
+        );
+}
+
+
+float valueNoise(
+    vec3 position)
+{
+    ivec3 baseCell =
+        ivec3(
+            floor(
+                position));
+
+
+    vec3 local =
+        fract(
+            position);
+
+
+    vec3 fade =
+        smoothInterpolation(
+            local);
+
+
+    float n000 =
+        hash01(
+            baseCell +
+            ivec3(0, 0, 0));
+
+
+    float n100 =
+        hash01(
+            baseCell +
+            ivec3(1, 0, 0));
+
+
+    float n010 =
+        hash01(
+            baseCell +
+            ivec3(0, 1, 0));
+
+
+    float n110 =
+        hash01(
+            baseCell +
+            ivec3(1, 1, 0));
+
+
+    float n001 =
+        hash01(
+            baseCell +
+            ivec3(0, 0, 1));
+
+
+    float n101 =
+        hash01(
+            baseCell +
+            ivec3(1, 0, 1));
+
+
+    float n011 =
+        hash01(
+            baseCell +
+            ivec3(0, 1, 1));
+
+
+    float n111 =
+        hash01(
+            baseCell +
+            ivec3(1, 1, 1));
+
+
+    float x00 =
+        mix(
+            n000,
+            n100,
+            fade.x);
+
+
+    float x10 =
+        mix(
+            n010,
+            n110,
+            fade.x);
+
+
+    float x01 =
+        mix(
+            n001,
+            n101,
+            fade.x);
+
+
+    float x11 =
+        mix(
+            n011,
+            n111,
+            fade.x);
+
+
+    float y0 =
+        mix(
+            x00,
+            x10,
+            fade.y);
+
+
+    float y1 =
+        mix(
+            x01,
+            x11,
+            fade.y);
+
+
+    return
+        mix(
+            y0,
+            y1,
+            fade.z);
+}
+
+
+// =============================================================
+// WEATHER FBM
+// =============================================================
+
+float weatherFbm(
+    vec3 position)
+{
+    float value =
+        0.0;
+
+
+    float amplitude =
+        0.5333333;
+
+
+    value +=
+        valueNoise(
+            position) *
+        amplitude;
+
+
+    position =
+        position *
+        2.03 +
+        vec3(
+            17.1,
+            3.7,
+            11.9);
+
+
+    amplitude *=
+        0.5;
+
+
+    value +=
+        valueNoise(
+            position) *
+        amplitude;
+
+
+    position =
+        position *
+        2.01 +
+        vec3(
+            5.3,
+            19.7,
+            7.1);
+
+
+    amplitude *=
+        0.5;
+
+
+    value +=
+        valueNoise(
+            position) *
+        amplitude;
+
+
+    position =
+        position *
+        2.04 +
+        vec3(
+            13.7,
+            2.9,
+            23.1);
+
+
+    amplitude *=
+        0.5;
+
+
+    value +=
+        valueNoise(
+            position) *
+        amplitude;
+
+
+    return
+        clamp(
+            value,
+            0.0,
+            1.0);
+}
+
+
+// =============================================================
+// CUBEMAP FACE -> DIRECTION
+// =============================================================
+//
+// Cubemaps are sampled with a 3D direction.
+//
+// Here we're doing the inverse operation:
+//
+// cubemap texel
+//      ↓
+// planet direction
+//
+// The resulting procedural function depends ONLY on direction,
+// which means neighbouring cubemap faces evaluate the same
+// continuous field at their shared edge.
+
+vec3 cubeDirection(
+    int face,
+    vec2 uv)
+{
+    // [0, 1] -> [-1, 1]
+    vec2 p =
+        uv *
+        2.0 -
+        1.0;
+
+
+    if (face == 0)
+    {
+        // +X
+        return
+            normalize(
+                vec3(
+                    1.0,
+                    -p.y,
+                    -p.x));
+    }
+
+
+    if (face == 1)
+    {
+        // -X
+        return
+            normalize(
+                vec3(
+                    -1.0,
+                    -p.y,
+                    p.x));
+    }
+
+
+    if (face == 2)
+    {
+        // +Y
+        return
+            normalize(
+                vec3(
+                    p.x,
+                    1.0,
+                    p.y));
+    }
+
+
+    if (face == 3)
+    {
+        // -Y
+        return
+            normalize(
+                vec3(
+                    p.x,
+                    -1.0,
+                    -p.y));
+    }
+
+
+    if (face == 4)
+    {
+        // +Z
+        return
+            normalize(
+                vec3(
+                    p.x,
+                    -p.y,
+                    1.0));
+    }
+
+
+    // -Z
+    return
+        normalize(
+            vec3(
+                -p.x,
+                -p.y,
+                -1.0));
+}
+
+
+// =============================================================
+// MAIN
+// =============================================================
+
+void main()
+{
+    ivec2 resolution =
+        imageSize(
+            outWeatherMap);
+
+
+    ivec2 coordinate =
+        ivec2(
+            gl_GlobalInvocationID.xy);
+
+
+    int face =
+        int(
+            gl_GlobalInvocationID.z);
+
+
+    if (coordinate.x >= resolution.x ||
+        coordinate.y >= resolution.y ||
+        face >= 6)
+    {
+        return;
+    }
+
+
+    vec2 uv =
+        (
+            vec2(
+                coordinate)
+            +
+            0.5
+        )
+        /
+        vec2(
+            resolution);
+
+
+    vec3 direction =
+        cubeDirection(
+            face,
+            uv);
+
+
+    // =========================================================
+    // DOMAIN WARP
+    // =========================================================
+    //
+    // "Domain warping" means we slightly bend the coordinates
+    // before sampling the main noise.
+    //
+    // Instead of:
+    //
+    //     noise(position)
+    //
+    // we do:
+    //
+    //     noise(position + anotherNoise)
+    //
+    // This creates much more natural sweeping weather systems and
+    // avoids obviously round noise blobs.
+
+    vec3 warp =
+        vec3(
+            weatherFbm(
+                direction *
+                1.10 +
+                vec3(
+                    13.7,
+                    2.1,
+                    5.8)),
+
+            weatherFbm(
+                direction *
+                1.10 +
+                vec3(
+                    3.2,
+                    17.4,
+                    9.6)),
+
+            weatherFbm(
+                direction *
+                1.10 +
+                vec3(
+                    8.8,
+                    4.3,
+                    21.7)));
+
+
+    warp =
+        (
+            warp -
+            0.5
+        )
+        *
+        2.0;
+
+
+    // =========================================================
+    // PLANET-SCALE COVERAGE
+    // =========================================================
+
+    vec3 coveragePosition =
+        direction *
+        1.65 +
+        warp *
+        0.55;
+
+
+    float coverageLow =
+        weatherFbm(
+            coveragePosition +
+            vec3(
+                31.1,
+                7.8,
+                12.4));
+
+
+    float coverageMedium =
+        weatherFbm(
+            direction *
+            3.10 +
+            warp *
+            0.25 +
+            vec3(
+                6.3,
+                27.9,
+                3.7));
+
+
+    float coverageField =
+        coverageLow *
+        0.78 +
+        coverageMedium *
+        0.22;
+
+
+    // Convert the smooth field into recognizable cloudy and clear
+    // regions while keeping broad soft transitions.
+    float coverage =
+        smoothstep(
+            0.40,
+            0.68,
+            coverageField);
+
+
+    // =========================================================
+    // CLOUD TYPE
+    // =========================================================
+    //
+    // For now this just controls whether a region tends toward
+    // lower/flatter or taller cloud formations.
+    //
+    // Later this can become a genuine cloud-type control.
+
+    float cloudType =
+        weatherFbm(
+            direction *
+            1.30 +
+            warp *
+            0.20 +
+            vec3(
+                19.3,
+                41.7,
+                8.2));
+
+
+    cloudType =
+        smoothstep(
+            0.25,
+            0.75,
+            cloudType);
+
+
+    // =========================================================
+    // STORMINESS
+    // =========================================================
+
+    float stormField =
+        weatherFbm(
+            direction *
+            2.20 +
+            vec3(
+                44.1,
+                9.7,
+                16.3));
+
+
+    float storminess =
+        coverage *
+        smoothstep(
+            0.67,
+            0.88,
+            stormField);
+
+
+    // =========================================================
+    // HEIGHT POTENTIAL
+    // =========================================================
+
+    float heightPotential =
+        mix(
+            0.30,
+            0.88,
+            cloudType);
+
+
+    heightPotential +=
+        storminess *
+        0.12;
+
+
+    heightPotential =
+        clamp(
+            heightPotential,
+            0.0,
+            1.0);
+
+
+    imageStore(
+        outWeatherMap,
+        ivec3(
+            coordinate,
+            face),
+        vec4(
+            coverage,
+            cloudType,
+            storminess,
+            heightPotential));
+}
