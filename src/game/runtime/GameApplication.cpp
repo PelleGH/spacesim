@@ -34,7 +34,7 @@ namespace SpaceSim
             m_world.registry.valid(m_world.playerShip) &&
             m_world.registry.all_of<TransformComponent>(m_world.playerShip))
         {
-            const auto& initialShipTransform =
+            const auto &initialShipTransform =
                 m_world.registry.get<TransformComponent>(m_world.playerShip);
 
             m_world.registry.emplace<PreviousTransformComponent>(
@@ -48,7 +48,7 @@ namespace SpaceSim
             throw std::runtime_error("Prototype world did not create an atmosphere.");
         }
 
-        const auto& atmosphere =
+        const auto &atmosphere =
             m_world.registry.get<AtmosphereComponent>(m_world.primaryPlanet);
 
         m_renderResources =
@@ -160,7 +160,43 @@ namespace SpaceSim
         {
             m_window.toggleFullscreen();
         }
+        static constexpr SDL_Scancode cloudDebugKeys[] =
+            {
+                SDL_SCANCODE_1,
+                SDL_SCANCODE_2,
+                SDL_SCANCODE_3,
+                SDL_SCANCODE_4,
+                SDL_SCANCODE_5,
+                SDL_SCANCODE_6,
+                SDL_SCANCODE_7,
+                SDL_SCANCODE_8,
+                SDL_SCANCODE_9};
 
+        static constexpr SDL_Scancode cloudDebugKeypadKeys[] =
+            {
+                SDL_SCANCODE_KP_1,
+                SDL_SCANCODE_KP_2,
+                SDL_SCANCODE_KP_3,
+                SDL_SCANCODE_KP_4,
+                SDL_SCANCODE_KP_5,
+                SDL_SCANCODE_KP_6,
+                SDL_SCANCODE_KP_7,
+                SDL_SCANCODE_KP_8,
+                SDL_SCANCODE_KP_9};
+
+        for (int i = 0; i < 9; ++i)
+        {
+            if (m_input.keyPressed(cloudDebugKeys[i]) ||
+                m_input.keyPressed(cloudDebugKeypadKeys[i]))
+            {
+                m_renderer.setCloudDebugView(i + 1);
+
+                std::cout
+                    << "Cloud debug view: "
+                    << i + 1
+                    << '\n';
+            }
+        }
         // Mouse steering uses relative mode while RMB is held. Keeping capture
         // here (rather than in the ship system) keeps platform/window behavior
         // out of gameplay systems.
@@ -226,11 +262,11 @@ namespace SpaceSim
 
         for (const entt::entity entity : interpolatedView)
         {
-            const auto& current =
+            const auto &current =
                 interpolatedView.get<TransformComponent>(
                     entity);
 
-            auto& previous =
+            auto &previous =
                 interpolatedView.get<PreviousTransformComponent>(
                     entity);
 
@@ -284,16 +320,16 @@ namespace SpaceSim
             !m_world.registry.all_of<
                 ShipMovementComponent,
                 ShipControlComponent>(
-                    m_world.playerShip))
+                m_world.playerShip))
         {
             return;
         }
 
-        const auto& movement =
+        const auto &movement =
             m_world.registry.get<ShipMovementComponent>(
                 m_world.playerShip);
 
-        const auto& control =
+        const auto &control =
             m_world.registry.get<ShipControlComponent>(
                 m_world.playerShip);
 
@@ -313,7 +349,7 @@ namespace SpaceSim
         if (m_world.registry.all_of<HyperdriveComponent>(
                 m_world.playerShip))
         {
-            const auto& hyperdrive =
+            const auto &hyperdrive =
                 m_world.registry.get<HyperdriveComponent>(
                     m_world.playerShip);
 
@@ -353,19 +389,19 @@ namespace SpaceSim
             m_world.registry.all_of<
                 GlobalPositionComponent,
                 PlanetComponent>(
-                    m_world.primaryPlanet) &&
+                m_world.primaryPlanet) &&
             m_world.registry.all_of<TransformComponent>(
                 m_world.playerShip))
         {
-            const auto& planetPosition =
+            const auto &planetPosition =
                 m_world.registry.get<GlobalPositionComponent>(
                     m_world.primaryPlanet);
 
-            const auto& planet =
+            const auto &planet =
                 m_world.registry.get<PlanetComponent>(
                     m_world.primaryPlanet);
 
-            const auto& shipTransform =
+            const auto &shipTransform =
                 m_world.registry.get<TransformComponent>(
                     m_world.playerShip);
 
@@ -376,8 +412,7 @@ namespace SpaceSim
             const double altitudeMeters =
                 glm::length(
                     shipGlobalMeters -
-                    planetPosition.positionMeters)
-                -
+                    planetPosition.positionMeters) -
                 planet.radiusMeters;
 
             const bool nearBody =

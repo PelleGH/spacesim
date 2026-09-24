@@ -22,61 +22,50 @@ namespace SpaceSim
 
         ~CloudPass();
 
-
         CloudPass(
-            const CloudPass&) = delete;
+            const CloudPass &) = delete;
 
-
-        CloudPass& operator=(
-            const CloudPass&) = delete;
-
+        CloudPass &operator=(
+            const CloudPass &) = delete;
 
         GLuint render(
             int width,
             int height,
             GLuint sceneColorTexture,
             GLuint sceneLinearDepthTexture,
-            const RenderCamera& camera,
+            const RenderCamera &camera,
             float aspectRatio,
-            const DirectionalLight& sun,
-            const AtmosphereInstance& atmosphere);
+            const DirectionalLight &sun,
+            const AtmosphereInstance &atmosphere);
 
+        void setDebugView(int view) { m_debugView = view; }
 
     private:
         void resize(
             int width,
             int height);
-
-
+        int m_debugView = 1;
         void destroyTarget();
 
-
         GlShader m_shader;
-
 
         // Local volumetric cloud structure.
         CloudNoiseVolume m_noiseVolume;
 
-
         // Planet-scale weather distribution.
         CloudWeatherMap m_weatherMap;
-
 
         GLuint m_vertexArray =
             0;
 
-
         GLuint m_framebuffer =
             0;
-
 
         GLuint m_colorTexture =
             0;
 
-
         int m_width =
             0;
-
 
         int m_height =
             0;

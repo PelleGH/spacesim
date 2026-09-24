@@ -25,7 +25,8 @@ out vec4 outColor;
 //     green = cumulus
 //     blue  = towering / storm
 
-const int CLOUD_DEBUG_VIEW = 1;
+uniform int cloudDebugView;
+#define CLOUD_DEBUG_VIEW cloudDebugView
 
 
 // =============================================================
