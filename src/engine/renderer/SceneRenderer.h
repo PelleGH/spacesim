@@ -123,6 +123,10 @@ namespace SpaceSim
             return m_atmosphereSpecularEnabled;
         }
         void setCloudDebugView(int view) { m_cloudPass.setDebugView(view); }
+        void setCloudMorphologyDebugOverride(int mode)
+        {
+            m_cloudPass.setMorphologyDebugOverride(mode);
+        }
 
     private:
         HdrRenderTarget m_hdrTarget;

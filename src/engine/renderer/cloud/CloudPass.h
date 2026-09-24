@@ -39,6 +39,7 @@ namespace SpaceSim
             const AtmosphereInstance &atmosphere);
 
         void setDebugView(int view) { m_debugView = view; }
+        void setMorphologyDebugOverride(int mode) { m_morphologyDebugOverride = mode; }
 
     private:
         void resize(
@@ -54,7 +55,7 @@ namespace SpaceSim
 
         // Planet-scale weather distribution.
         CloudWeatherMap m_weatherMap;
-
+        int m_morphologyDebugOverride = 0;
         GLuint m_vertexArray =
             0;
 

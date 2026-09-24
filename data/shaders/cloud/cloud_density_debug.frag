@@ -35,7 +35,7 @@ uniform int cloudDebugView;
 
 uniform sampler2D sceneColorTexture;
 uniform sampler2D sceneLinearDepthTexture;
-
+uniform int cloudMorphologyDebugOverride;
 
 // =============================================================
 // CLOUD DATA
@@ -407,12 +407,43 @@ float calculateLocalCoverage(
 vec3 cloudTypeWeights(
     vec4 weather)
 {
+    // Debug override:
+    //
+    // 0 = real weather
+    // 1 = forced stratus
+    // 2 = forced cumulus
+    // 3 = forced towering
+
+    if (cloudMorphologyDebugOverride == 1)
+    {
+        return vec3(
+            1.0,
+            0.0,
+            0.0);
+    }
+
+    if (cloudMorphologyDebugOverride == 2)
+    {
+        return vec3(
+            0.0,
+            1.0,
+            0.0);
+    }
+
+    if (cloudMorphologyDebugOverride == 3)
+    {
+        return vec3(
+            0.0,
+            0.0,
+            1.0);
+    }
+
+
     float type =
         clamp(
             max(
                 weather.g,
-                weather.b *
-                0.90),
+                weather.b * 0.90),
             0.0,
             1.0);
 
@@ -447,12 +478,16 @@ vec3 cloudTypeWeights(
             towering);
 
 
-    return weights /
+    float weightSum =
         max(
             weights.x +
             weights.y +
             weights.z,
             0.0001);
+
+
+    return weights /
+        weightSum;
 }
 
 
@@ -899,7 +934,7 @@ float sampleCoarseShape(
         textureLod(
             baseShapeNoise,
             uvA,
-            lodA).g;
+            lodA).r;
 
 
     float secondPeriodKm =
@@ -938,7 +973,7 @@ float sampleCoarseShape(
         textureLod(
             baseShapeNoise,
             uvB,
-            lodB).g;
+            lodB).r;
 
 
     return mix(

@@ -183,7 +183,29 @@ namespace SpaceSim
                 SDL_SCANCODE_KP_7,
                 SDL_SCANCODE_KP_8,
                 SDL_SCANCODE_KP_9};
+        if (m_input.keyPressed(SDL_SCANCODE_F5))
+        {
+            m_renderer.setCloudMorphologyDebugOverride(0);
+            std::cout << "Cloud morphology: WEATHER\n";
+        }
 
+        if (m_input.keyPressed(SDL_SCANCODE_F6))
+        {
+            m_renderer.setCloudMorphologyDebugOverride(1);
+            std::cout << "Cloud morphology: STRATUS\n";
+        }
+
+        if (m_input.keyPressed(SDL_SCANCODE_F7))
+        {
+            m_renderer.setCloudMorphologyDebugOverride(2);
+            std::cout << "Cloud morphology: CUMULUS\n";
+        }
+
+        if (m_input.keyPressed(SDL_SCANCODE_F8))
+        {
+            m_renderer.setCloudMorphologyDebugOverride(3);
+            std::cout << "Cloud morphology: TOWERING\n";
+        }
         for (int i = 0; i < 9; ++i)
         {
             if (m_input.keyPressed(cloudDebugKeys[i]) ||

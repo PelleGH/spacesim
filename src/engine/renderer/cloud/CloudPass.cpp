@@ -14,7 +14,7 @@ namespace SpaceSim
     CloudPass::CloudPass()
         : m_shader(
               "data/shaders/renderer/fullscreen.vert",
-              "data/shaders/cloud/cloud_density_debug.frag")
+              "data/shaders/cloud/cloud_debug.frag")
     {
         glCreateVertexArrays(
             1,
@@ -229,7 +229,9 @@ namespace SpaceSim
 
         m_shader.use();
         m_shader.setInt("cloudDebugView", m_debugView);
-
+        m_shader.setInt(
+            "cloudMorphologyDebugOverride",
+            m_morphologyDebugOverride);
         m_shader.setMat4(
             "inverseViewProjection",
             rayReconstructionMatrix);

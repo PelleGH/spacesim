@@ -39,11 +39,11 @@ namespace SpaceSim
 
         // Large cloud masses visible from orbit.
         float coarseShapePeriodKm =
-            1200.0f;
+            160.0f;
 
         // Smaller local cloud structure.
         float baseShapePeriodKm =
-            220.0f;
+            40.0f;
 
         float densityMultiplier =
             1.0f;

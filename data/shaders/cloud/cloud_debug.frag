@@ -14,7 +14,7 @@ out vec4 outColor;
 uniform sampler2D sceneColorTexture;
 uniform sampler2D sceneLinearDepthTexture;
 
-
+uniform int cloudMorphologyDebugOverride;
 // =============================================================
 // CLOUD DATA
 // =============================================================
@@ -277,6 +277,38 @@ float calculateLocalCoverage(
 vec3 cloudTypeWeights(
     vec4 weather)
 {
+    // Debug override:
+    //
+    // 0 = real weather
+    // 1 = forced stratus
+    // 2 = forced cumulus
+    // 3 = forced towering
+
+    if (cloudMorphologyDebugOverride == 1)
+    {
+        return vec3(
+            1.0,
+            0.0,
+            0.0);
+    }
+
+    if (cloudMorphologyDebugOverride == 2)
+    {
+        return vec3(
+            0.0,
+            1.0,
+            0.0);
+    }
+
+    if (cloudMorphologyDebugOverride == 3)
+    {
+        return vec3(
+            0.0,
+            0.0,
+            1.0);
+    }
+
+
     float type =
         clamp(
             max(
@@ -285,6 +317,7 @@ vec3 cloudTypeWeights(
             0.0,
             1.0);
 
+
     float stratus =
         1.0 -
         smoothstep(
@@ -292,21 +325,39 @@ vec3 cloudTypeWeights(
             0.48,
             type);
 
+
     float towering =
         smoothstep(
             0.58,
             0.86,
             type);
 
+
     float cumulus =
         max(
-            1.0 - stratus - towering,
+            1.0 -
+            stratus -
+            towering,
             0.0);
 
-    vec3 weights = vec3(stratus, cumulus, towering);
-    float weightSum = max(weights.x + weights.y + weights.z, 0.0001);
 
-    return weights / weightSum;
+    vec3 weights =
+        vec3(
+            stratus,
+            cumulus,
+            towering);
+
+
+    float weightSum =
+        max(
+            weights.x +
+            weights.y +
+            weights.z,
+            0.0001);
+
+
+    return weights /
+        weightSum;
 }
 
 
@@ -645,7 +696,7 @@ float sampleCoarseShape(
         textureLod(
             baseShapeNoise,
             uvA,
-            lodA).g;
+            lodA).r;
 
     float secondPeriodKm =
         physicalPeriodKm * 1.731;
@@ -667,7 +718,7 @@ float sampleCoarseShape(
         textureLod(
             baseShapeNoise,
             uvB,
-            lodB).g;
+            lodB).r;
 
     return mix(shapeA, shapeB, 0.35);
 }
