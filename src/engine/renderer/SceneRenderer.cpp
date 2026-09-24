@@ -527,6 +527,7 @@ namespace SpaceSim
         // Temporary debug composite; physical atmosphere/cloud coupling comes next.
         if (atmosphereActive && atmosphere->cloudsValid())
             finalHdrTexture = m_cloudPass.render(width, height, finalHdrTexture, m_hdrTarget.linearDepthTexture(), camera, aspect, sun, *atmosphere); // =========================================================
+        finalHdrTexture = m_cloud2TestPass.render(width, height, finalHdrTexture, m_hdrTarget.linearDepthTexture(), camera, aspect, sun, atmosphere);
         // PASS 4: AUTO EXPOSURE
         // =========================================================
 

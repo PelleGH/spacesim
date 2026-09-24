@@ -165,6 +165,7 @@ namespace SpaceSim
     }
 
     GLuint CloudPass::render(
+        return sceneColorTexture; // TEMP: old planetary clouds disabled while Cloud2 is developed.
         int width,
         int height,
         GLuint sceneColorTexture,

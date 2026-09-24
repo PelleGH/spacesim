@@ -7,7 +7,7 @@
 #include "renderer/RenderCamera.h"
 #include "renderer/RenderObject.h"
 #include "renderer/StarPass.h"
-
+#include "renderer/cloud2/Cloud2TestPass.h"
 #include "renderer/atmosphere/AtmosphereInstance.h"
 #include "renderer/atmosphere/AtmospherePass.h"
 #include "renderer/atmosphere/AtmosphereViewLuts.h"
@@ -148,6 +148,7 @@ namespace SpaceSim
         AtmospherePass m_atmospherePass;
 
         CloudPass m_cloudPass;
+        Cloud2TestPass m_cloud2TestPass;
         AutoExposurePass m_autoExposurePass;
 
         BloomPass m_bloomPass;
