@@ -108,6 +108,7 @@ add_library(SpaceSimRenderer STATIC
     src/engine/renderer/cloud/CloudPass.cpp
     src/engine/renderer/cloud/CloudNoiseVolume.cpp
     src/engine/renderer/cloud/CloudWeatherMap.cpp
+    src/engine/renderer/cloud2/Cloud2TestPass.cpp
 )
 
 target_include_directories(SpaceSimRenderer PUBLIC

@@ -174,6 +174,8 @@ namespace SpaceSim
         const DirectionalLight &sun,
         const AtmosphereInstance &atmosphere)
     {
+        return sceneColorTexture; // TEMP: old planetary clouds disabled while Cloud2 is developed.
+
         if (!atmosphere.cloudsValid())
         {
             return sceneColorTexture;

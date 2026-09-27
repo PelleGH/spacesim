@@ -14,7 +14,7 @@
 #include "renderer/cloud/CloudPass.h"
 #include "renderer/lighting/DirectionalLight.h"
 #include "renderer/lighting/EnvironmentLight.h"
-
+#include "renderer/cloud2/Cloud2TestPass.h"
 #include "renderer/opengl/GlShader.h"
 #include "renderer/opengl/GlTextureCube.h"
 #include "renderer/opengl/HdrRenderTarget.h"
@@ -148,6 +148,7 @@ namespace SpaceSim
         AtmospherePass m_atmospherePass;
 
         CloudPass m_cloudPass;
+        Cloud2TestPass m_cloud2TestPass;
         AutoExposurePass m_autoExposurePass;
 
         BloomPass m_bloomPass;
