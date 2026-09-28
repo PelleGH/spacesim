@@ -3,11 +3,9 @@
 #include "renderer/RenderCamera.h"
 
 #include "renderer/atmosphere/AtmosphereInstance.h"
-
+#include "renderer/cloud2/CloudDensityVolume.h"
 #include "renderer/cloud2/CloudFormation.h"
-
 #include "renderer/lighting/DirectionalLight.h"
-
 #include "renderer/opengl/GlShader.h"
 
 #include <glad/gl.h>
@@ -50,7 +48,7 @@ namespace SpaceSim
             int height);
 
 
-        void destroyTarget();
+        void destroyTargets();
 
 
         void lockFormationIfNeeded(
@@ -58,18 +56,93 @@ namespace SpaceSim
             const AtmosphereInstance& atmosphere);
 
 
-        GlShader m_shader;
+        // =====================================================
+        // LOCAL CLOUD DENSITY
+        // =====================================================
+
+        CloudDensityVolume m_densityVolume;
+
+
+        // =====================================================
+        // PASS 1
+        //
+        // Half-resolution volume integration.
+        // =====================================================
+
+        GlShader m_volumeShader;
+
+
+        // =====================================================
+        // PASS 2
+        //
+        // Current same-frame spatial filter.
+        // =====================================================
+
+        GlShader m_spatialShader;
+
+
+        // =====================================================
+        // PASS 3
+        //
+        // Full-resolution depth-aware composite.
+        // =====================================================
+
+        GlShader m_compositeShader;
 
 
         GLuint m_vertexArray =
             0;
 
 
-        GLuint m_framebuffer =
+        // =====================================================
+        // RAW HALF-RES CLOUD
+        // =====================================================
+
+        GLuint m_volumeFramebuffer =
             0;
 
 
-        GLuint m_colorTexture =
+        GLuint m_volumeCloudTexture =
+            0;
+
+
+        GLuint m_volumeDepthTexture =
+            0;
+
+
+        // =====================================================
+        // FILTERED HALF-RES CLOUD
+        // =====================================================
+
+        GLuint m_spatialFramebuffer =
+            0;
+
+
+        GLuint m_spatialCloudTexture =
+            0;
+
+
+        GLuint m_spatialDepthTexture =
+            0;
+
+
+        int m_volumeWidth =
+            0;
+
+
+        int m_volumeHeight =
+            0;
+
+
+        // =====================================================
+        // FULL-RES RESULT
+        // =====================================================
+
+        GLuint m_compositeFramebuffer =
+            0;
+
+
+        GLuint m_compositeTexture =
             0;
 
 
@@ -80,6 +153,10 @@ namespace SpaceSim
         int m_height =
             0;
 
+
+        // =====================================================
+        // CONTROLLED FORMATION
+        // =====================================================
 
         CloudFormation m_formation =
             makeTestCumulusFormation();
